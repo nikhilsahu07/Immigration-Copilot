@@ -6,7 +6,7 @@ import { app } from 'electron';
 // Load .env file
 const envPath = app.isPackaged
   ? path.join(process.resourcesPath, '.env')
-  : path.join(__dirname, '../../../.env');
+  : path.join(process.cwd(), '.env');
 
 dotenv.config({ path: envPath });
 
