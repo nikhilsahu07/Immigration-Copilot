@@ -1,0 +1,1 @@
+export { PortalsPage } from './PortalsPage';
