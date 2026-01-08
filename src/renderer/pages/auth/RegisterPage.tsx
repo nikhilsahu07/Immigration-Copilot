@@ -52,7 +52,7 @@ export function RegisterPage() {
               <FileText className="w-6 h-6 text-background" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">Emigration Copilot</h1>
+              <h1 className="text-2xl font-bold tracking-tight">Immigration Copilot</h1>
               <p className="text-sm text-muted-foreground">AI-Powered Form Automation</p>
             </div>
           </div>

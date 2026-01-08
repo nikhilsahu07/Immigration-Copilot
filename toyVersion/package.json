@@ -1,6 +1,6 @@
 {
-  "name": "emigration-copilot-demo",
-  "productName": "emigration-copilot-demo",
+  "name": "Immigration-copilot-demo",
+  "productName": "Immigration-copilot-demo",
   "version": "1.0.0",
   "description": "My Electron application description",
   "main": ".webpack/main",

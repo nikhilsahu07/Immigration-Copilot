@@ -12,8 +12,8 @@ import { rendererConfig } from './webpack.renderer.config';
 
 const config: ForgeConfig = {
   packagerConfig: {
-    name: 'Emigration Copilot',
-    executableName: 'emigration-copilot',
+    name: 'Immigration Copilot',
+    executableName: 'Immigration-copilot',
     asar: true,
     icon: './resources/icons/icon',
     extraResource: [
@@ -24,7 +24,7 @@ const config: ForgeConfig = {
   rebuildConfig: {},
   makers: [
     new MakerSquirrel({
-      name: 'emigration_copilot',
+      name: 'Immigration_copilot',
       setupIcon: './resources/icons/icon.ico',
     }),
     new MakerZIP({}, ['darwin', 'win32']),

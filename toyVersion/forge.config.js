@@ -1,7 +1,7 @@
 module.exports = {
   packagerConfig: {
-    name: 'Emigration Copilot Demo',
-    executableName: 'emigration-copilot-demo',
+    name: 'Immigration Copilot Demo',
+    executableName: 'Immigration-copilot-demo',
     asar: true, // ← Back to true
     icon: './resources/icon',
   },
@@ -10,7 +10,7 @@ module.exports = {
     {
       name: '@electron-forge/maker-squirrel',
       config: {
-        name: 'emigration_copilot_demo',
+        name: 'Immigration_copilot_demo',
       },
     },
     {

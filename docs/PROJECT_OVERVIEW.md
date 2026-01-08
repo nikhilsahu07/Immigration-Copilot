@@ -1,9 +1,9 @@
 # Project Overview
 
-Emigration Copilot - Desktop Application
+Immigration Copilot - Desktop Application
 
 Executive Summary
-Emigration Copilot is an AI-powered desktop application designed for immigration and visa agencies to automate the tedious process of filling visa application forms across multiple government portals. The application combines intelligent data extraction from client documents using Google Gemini AI with browser automation powered by Playwright, all within a native desktop experience built on Electron.
+Immigration Copilot is an AI-powered desktop application designed for immigration and visa agencies to automate the tedious process of filling visa application forms across multiple government portals. The application combines intelligent data extraction from client documents using Google Gemini AI with browser automation powered by Playwright, all within a native desktop experience built on Electron.
 
 Core Problem Statement
 Immigration agencies face significant operational challenges:
@@ -19,7 +19,7 @@ Document Chaos: Client documents (passports, education certificates, employment 
 Repetitive Work: Same client information must be re-entered for every application
 
 Solution Overview
-Emigration Copilot provides a 3-step automated workflow:
+Immigration Copilot provides a 3-step automated workflow:
 
 Data Extraction: Upload client documents → AI extracts and structures information → Agent approves
 
@@ -252,7 +252,7 @@ Select client → Documents tab → Upload
 
 Drag-drop or browse PDFs/images
 
-Files uploaded to S3 bucket: emigration-copilot-docs/{companyId}/{clientId}/{filename}
+Files uploaded to S3 bucket: Immigration-copilot-docs/{companyId}/{clientId}/{filename}
 
 Document metadata saved to MongoDB with S3 URL
 
@@ -941,4 +941,4 @@ Team Collaboration: Real-time job status sharing across agents
 API Access: Allow third-party integrations
 
 Conclusion
-Emigration Copilot transforms immigration agencies' operations by combining AI-powered data extraction with intelligent browser automation, all within a secure, desktop-native application. The human-in-the-loop approach ensures accuracy while dramatically reducing manual work, allowing agents to process 5-10x more applications per day.
+Immigration Copilot transforms immigration agencies' operations by combining AI-powered data extraction with intelligent browser automation, all within a secure, desktop-native application. The human-in-the-loop approach ensures accuracy while dramatically reducing manual work, allowing agents to process 5-10x more applications per day.

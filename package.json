@@ -1,6 +1,6 @@
 {
-  "name": "emigration-copilot",
-  "productName": "Emigration Copilot",
+  "name": "Immigration-copilot",
+  "productName": "Immigration Copilot",
   "version": "1.0.0",
   "description": "AI-powered desktop application for immigration agencies to automate visa form filling",
   "main": ".webpack/main",

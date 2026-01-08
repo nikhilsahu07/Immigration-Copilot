@@ -14,7 +14,7 @@ dotenv.config({ path: envPath });
 const envSchema = z.object({
   // MongoDB
   MONGODB_URI: z.string().min(1, 'MongoDB URI is required'),
-  MONGODB_DB_NAME: z.string().default('emigration-copilot'),
+  MONGODB_DB_NAME: z.string().default('Immigration-copilot'),
 
   // AWS S3
   AWS_REGION: z.string().default('us-east-1'),

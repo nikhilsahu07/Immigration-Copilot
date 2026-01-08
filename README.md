@@ -1,4 +1,4 @@
-# Emigration Copilot
+# Immigration Copilot
 
 AI-powered desktop application for immigration agencies to automate visa form filling.
 

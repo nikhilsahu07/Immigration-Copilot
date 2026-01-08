@@ -1,7 +1,7 @@
 ## Directory Structure
 
 ```
-/emigration-copilot
+/Immigration-copilot
     ├── package.json
     ├── tsconfig.json
     ├── forge.config.ts
