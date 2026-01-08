@@ -281,7 +281,7 @@ Extraction Process (Backend)
    - Document texts/images
    - Extraction schema (JSON structure)
    - Custom prompt if provided
-6. Send to Gemini API (gemini-2.0-flash)
+6. Send to Gemini API (gemini-3-flash-preview)
 7. Parse JSON response
 8. Validate with Zod schema
 9. Store in extractions collection with status: PENDING

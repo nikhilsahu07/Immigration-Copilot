@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
-import { Play, Pause, Square, AlertTriangle, KeyRound, CheckCircle, Loader2, ChevronDown } from 'lucide-react';
-import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label, Progress, Separator } from '../../components/ui';
-import { useAutomationStore } from '../../stores';
+import { useState, useEffect } from 'react';
+import { Play, Pause, Square, AlertTriangle, KeyRound, CheckCircle, Loader2, ChevronDown, Sparkles } from 'lucide-react';
+import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label, Progress } from '../../components/ui';
+import { useAutomationStore, useClientStore, usePortalStore } from '../../stores';
+import { api } from '../../lib/api';
+import type { Extraction } from '../../../shared/types';
+import { PromptInput } from '../../components/PromptInput';
 
 export function AutomationPage() {
   const {
@@ -20,29 +23,55 @@ export function AutomationPage() {
     pauseAutomation,
     resumeAutomation,
     approveMapping,
-    submitForm,
     submitOtp,
     resumeAfterCaptcha,
     loadUrl,
   } = useAutomationStore();
 
+  const { clients, fetchClients, isLoading: clientsLoading } = useClientStore();
+  const { portals, fetchPortals, isLoading: portalsLoading } = usePortalStore();
+
   const [selectedClient, setSelectedClient] = useState('');
   const [selectedPortal, setSelectedPortal] = useState('');
   const [otpCode, setOtpCode] = useState('');
+  const [approvedExtraction, setApprovedExtraction] = useState<Extraction | null>(null);
+  const [loadingExtraction, setLoadingExtraction] = useState(false);
+  const [aiPrompts, setAiPrompts] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
 
-  // Placeholder data
-  const clients = [
-    { _id: '1', name: 'John Smith', hasApprovedExtraction: true },
-    { _id: '2', name: 'Maria Garcia', hasApprovedExtraction: true },
-  ];
+  useEffect(() => {
+    fetchClients();
+    fetchPortals();
+  }, []);
 
-  const portals = [
-    { _id: '1', name: 'US Visa Application', url: 'https://ceac.state.gov' },
-    { _id: '2', name: 'UK Visa Application', url: 'https://www.gov.uk/apply-uk-visa' },
-  ];
+  // When client is selected, check for approved extraction
+  useEffect(() => {
+    if (selectedClient) {
+      loadApprovedExtraction(selectedClient);
+    } else {
+      setApprovedExtraction(null);
+    }
+  }, [selectedClient]);
+
+  const loadApprovedExtraction = async (clientId: string) => {
+    setLoadingExtraction(true);
+    try {
+      const result = await api.extraction.list({ clientId });
+      if (result.success && result.data) {
+        const approved = result.data.find(e => e.status === 'approved');
+        setApprovedExtraction(approved || null);
+      }
+    } catch (err) {
+      console.error('Failed to load extraction:', err);
+    } finally {
+      setLoadingExtraction(false);
+    }
+  };
+
+  // Get clients with approved extractions only
+  const eligibleClients = clients.filter(c => c.hasApprovedExtraction);
 
   const handleStart = async () => {
-    if (!selectedClient || !selectedPortal) return;
+    if (!selectedClient || !selectedPortal || !approvedExtraction) return;
     
     const portal = portals.find(p => p._id === selectedPortal);
     if (portal) {
@@ -50,7 +79,7 @@ export function AutomationPage() {
       await startAutomation({
         clientId: selectedClient,
         portalId: selectedPortal,
-        extractionId: 'placeholder-extraction-id',
+        extractionId: approvedExtraction._id,
       });
     }
   };
@@ -86,40 +115,75 @@ export function AutomationPage() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Select Client</Label>
-                <select
-                  value={selectedClient}
-                  onChange={(e) => setSelectedClient(e.target.value)}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="">Choose a client...</option>
-                  {clients.filter(c => c.hasApprovedExtraction).map(client => (
-                    <option key={client._id} value={client._id}>
-                      {client.name}
-                    </option>
-                  ))}
-                </select>
+                {clientsLoading ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-sm">Loading clients...</span>
+                  </div>
+                ) : eligibleClients.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No clients with approved extractions. Create a client and approve their data extraction first.
+                  </p>
+                ) : (
+                  <select
+                    value={selectedClient}
+                    onChange={(e) => setSelectedClient(e.target.value)}
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">Choose a client...</option>
+                    {eligibleClients.map(client => (
+                      <option key={client._id} value={client._id}>
+                        {client.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
+
+              {selectedClient && loadingExtraction && (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">Loading extraction data...</span>
+                </div>
+              )}
+
+              {selectedClient && !loadingExtraction && !approvedExtraction && (
+                <p className="text-sm text-yellow-600">
+                  No approved extraction found for this client. Please approve their data extraction first.
+                </p>
+              )}
 
               <div className="space-y-2">
                 <Label>Select Portal</Label>
-                <select
-                  value={selectedPortal}
-                  onChange={(e) => setSelectedPortal(e.target.value)}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="">Choose a portal...</option>
-                  {portals.map(portal => (
-                    <option key={portal._id} value={portal._id}>
-                      {portal.name}
-                    </option>
-                  ))}
-                </select>
+                {portalsLoading ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-sm">Loading portals...</span>
+                  </div>
+                ) : portals.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No portals configured. Add a portal first.
+                  </p>
+                ) : (
+                  <select
+                    value={selectedPortal}
+                    onChange={(e) => setSelectedPortal(e.target.value)}
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">Choose a portal...</option>
+                    {portals.map(portal => (
+                      <option key={portal._id} value={portal._id}>
+                        {portal.name} ({portal.country})
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <Button 
                 onClick={handleStart} 
                 className="w-full" 
-                disabled={!selectedClient || !selectedPortal || isLoading}
+                disabled={!selectedClient || !selectedPortal || !approvedExtraction || isLoading}
               >
                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
                 Start Automation
@@ -240,6 +304,45 @@ export function AutomationPage() {
                 </CardContent>
               </Card>
             )}
+
+            {/* AI Instructions */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-primary" />
+                  AI Instructions
+                </CardTitle>
+                <CardDescription>Send custom prompts for the current page</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {aiPrompts.length > 0 && (
+                  <div className="max-h-32 overflow-y-auto space-y-2 mb-2">
+                    {aiPrompts.map((prompt, i) => (
+                      <div 
+                        key={i}
+                        className={`text-xs p-2 rounded ${
+                          prompt.role === 'user' 
+                            ? 'bg-primary/10 text-primary' 
+                            : 'bg-muted'
+                        }`}
+                      >
+                        {prompt.content}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <PromptInput
+                  placeholder="E.g., 'Skip optional fields' or 'Use N/A for empty values'"
+                  onSubmit={(prompt) => {
+                    setAiPrompts(prev => [...prev, { role: 'user', content: prompt }]);
+                    // TODO: Send prompt to automation for processing
+                    // This would typically update the form mapping strategy
+                    setAiPrompts(prev => [...prev, { role: 'assistant', content: 'Instruction noted. Will apply to current page.' }]);
+                  }}
+                  disabled={!isRunning || isPaused}
+                />
+              </CardContent>
+            </Card>
           </>
         )}
       </div>

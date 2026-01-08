@@ -33,9 +33,15 @@ export class GeminiService {
       // Add images if present
       for (const doc of request.documents) {
         if (doc.type === 'image' && doc.content) {
+          // Normalize MIME type - Gemini requires image/jpeg not image/jpg
+          let mimeType = doc.mimeType || 'image/jpeg';
+          if (mimeType === 'image/jpg') {
+            mimeType = 'image/jpeg';
+          }
+          
           parts.push({
             inlineData: {
-              mimeType: doc.mimeType || 'image/jpeg',
+              mimeType,
               data: doc.content,
             },
           });

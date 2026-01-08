@@ -42,14 +42,19 @@ export interface DocumentWithPresignedUrl extends Document {
 
 export interface UploadDocumentInput {
   clientId: string;
-  file: {
+  documentType: DocumentType;
+  description?: string;
+  // File object for direct upload
+  file?: {
     name: string;
     type: string;
     size: number;
     data: ArrayBuffer;
   };
-  documentType: DocumentType;
-  description?: string;
+  // Alternative: base64 encoded data for IPC
+  fileData?: string;
+  fileName?: string;
+  mimeType?: string;
 }
 
 export interface DocumentUploadResult {

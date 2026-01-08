@@ -1,6 +1,10 @@
 // IPC Channel Names
 
 export const IPC_CHANNELS = {
+  // Dashboard
+  DASHBOARD_STATS: 'dashboard:stats',
+  DASHBOARD_ACTIVITY: 'dashboard:activity',
+
   // Auth
   AUTH_REGISTER: 'auth:register',
   AUTH_LOGIN: 'auth:login',

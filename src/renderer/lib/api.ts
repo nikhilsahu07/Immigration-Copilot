@@ -25,7 +25,26 @@ import type {
   AutomationState,
 } from '../../shared/types';
 
+export interface DashboardStats {
+  totalClients: number;
+  pendingExtractions: number;
+  completedJobs: number;
+  activePortals: number;
+}
+
+export interface ActivityItem {
+  action: string;
+  resourceType: string;
+  resourceId: string;
+  details?: Record<string, unknown>;
+  createdAt: Date;
+}
+
 export interface ElectronAPI {
+  dashboard: {
+    getStats: () => Promise<Result<DashboardStats>>;
+    getActivity: (params?: { limit?: number }) => Promise<Result<ActivityItem[]>>;
+  };
   auth: {
     register: (data: RegisterInput) => Promise<Result<LoginResponse>>;
     login: (data: LoginInput) => Promise<Result<LoginResponse>>;

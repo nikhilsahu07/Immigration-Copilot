@@ -5,3 +5,5 @@ export * from './extraction-status.constants';
 export * from './document-types.constants';
 export * from './field-types.constants';
 export * from './error-codes.constants';
+export * from './countries.constants';
+

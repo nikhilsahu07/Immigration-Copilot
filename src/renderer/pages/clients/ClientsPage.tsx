@@ -5,6 +5,7 @@ import { useClientStore } from '../../stores';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, Button, Input, Label, Separator } from '../../components/ui';
 import { cn } from '../../lib/utils';
 import { formatDateLocale } from '../../../shared/utils';
+import { COUNTRIES } from '../../../shared/constants';
 
 export function ClientsPage() {
   const navigate = useNavigate();
@@ -235,11 +236,19 @@ export function ClientsPage() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="nationality">Nationality</Label>
-                    <Input
+                    <select
                       id="nationality"
                       value={newClient.nationality}
                       onChange={(e) => setNewClient(prev => ({ ...prev, nationality: e.target.value }))}
-                    />
+                      className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">Select country...</option>
+                      {COUNTRIES.map((country) => (
+                        <option key={country.code} value={country.name}>
+                          {country.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="passport">Passport Number</Label>

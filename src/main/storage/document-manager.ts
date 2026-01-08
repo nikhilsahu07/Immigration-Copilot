@@ -11,37 +11,58 @@ export class DocumentManager {
     agentId: string,
     input: UploadDocumentInput
   ): Promise<DocumentWithPresignedUrl> {
-    const { file, clientId, documentType, description } = input;
+    const { clientId, documentType, description } = input;
+
+    // Handle both file object and base64 encoded data
+    let fileName: string;
+    let mimeType: string;
+    let fileSize: number;
+    let buffer: Buffer;
+
+    if (input.file) {
+      // File object upload
+      fileName = input.file.name;
+      mimeType = input.file.type;
+      fileSize = input.file.size;
+      buffer = Buffer.from(input.file.data);
+    } else if (input.fileData && input.fileName && input.mimeType) {
+      // Base64 encoded upload from IPC
+      fileName = input.fileName;
+      mimeType = input.mimeType;
+      buffer = Buffer.from(input.fileData, 'base64');
+      fileSize = buffer.length;
+    } else {
+      throw createError(ERROR_CODES.DOCUMENT_INVALID_TYPE);
+    }
 
     // Validate file type
-    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+    if (!ALLOWED_FILE_TYPES.includes(mimeType)) {
       throw createError(ERROR_CODES.DOCUMENT_INVALID_TYPE);
     }
 
     // Validate file size
-    if (file.size > MAX_FILE_SIZE) {
+    if (fileSize > MAX_FILE_SIZE) {
       throw createError(ERROR_CODES.DOCUMENT_TOO_LARGE);
     }
 
     // Generate S3 key
-    const s3Key = generateS3Key(companyId, clientId, file.name);
-    const fileType = this.getFileType(file.type);
+    const s3Key = generateS3Key(companyId, clientId, fileName);
+    const fileType = this.getFileType(mimeType);
 
     try {
       // Upload to S3
-      const buffer = Buffer.from(file.data);
-      const s3Url = await uploadToS3(s3Key, buffer, file.type);
+      const s3Url = await uploadToS3(s3Key, buffer, mimeType);
 
       // Save to database
       const document = await documentRepository.create(companyId, agentId, {
         clientId,
-        filename: s3Key.split('/').pop() || file.name,
-        originalName: file.name,
+        filename: s3Key.split('/').pop() || fileName,
+        originalName: fileName,
         s3Key,
         s3Url,
         fileType,
         documentType,
-        fileSize: file.size,
+        fileSize,
         description,
       });
 

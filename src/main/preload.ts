@@ -19,6 +19,12 @@ function createListener<T>(channel: string) {
 
 // Expose electron API to renderer
 contextBridge.exposeInMainWorld('electronAPI', {
+  // Dashboard
+  dashboard: {
+    getStats: createInvoker(IPC_CHANNELS.DASHBOARD_STATS),
+    getActivity: createInvoker(IPC_CHANNELS.DASHBOARD_ACTIVITY),
+  },
+
   // Auth
   auth: {
     register: createInvoker(IPC_CHANNELS.AUTH_REGISTER),
