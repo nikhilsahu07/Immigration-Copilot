@@ -28,9 +28,14 @@ async function initialize(): Promise<void> {
     loadEnvironment();
     logger.info('Environment loaded successfully');
 
-    // Initialize database
-    await initializeDatabase();
-    logger.info('Database connected successfully');
+    // Try to initialize database - DON'T crash if it fails
+    try {
+      await initializeDatabase();
+      logger.info('Database connected successfully');
+    } catch (dbError) {
+      logger.error('Database connection failed (non-fatal):', dbError);
+      // Continue without database - app will still open
+    }
 
     // Create window manager
     windowManager = new WindowManager(
@@ -56,9 +61,16 @@ async function initialize(): Promise<void> {
     logger.info('Application initialized successfully');
   } catch (error) {
     logger.error('Failed to initialize application:', error);
+    // Show error dialog instead of crashing silently
+    const { dialog } = require('electron');
+    dialog.showErrorBox(
+      'Initialization Error',
+      `Failed to start application: ${error.message}\n\nCheck logs at: ${app.getPath('userData')}/logs/`
+    );
     app.quit();
   }
 }
+
 
 app.whenReady().then(initialize);
 
