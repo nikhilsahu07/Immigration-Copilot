@@ -12,7 +12,13 @@ import { DocumentPreview } from '../../components/DocumentPreview';
 export function ClientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { selectedClient, getClient, updateClient, isLoading: clientLoading } = useClientStore();
+  const { 
+    selectedClient, 
+    isLoading: clientLoading, 
+    getClient, 
+    updateClient,
+    deleteClient
+  } = useClientStore();
 
   const [documents, setDocuments] = useState<DocumentWithPresignedUrl[]>([]);
   const [extractions, setExtractions] = useState<Extraction[]>([]);
@@ -188,23 +194,42 @@ export function ClientDetailPage() {
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               Client Information
-              <Button 
-                variant="ghost" 
-                size="icon"
-                onClick={() => {
-                  setEditingClient({
-                    name: client.name || '',
-                    email: client.email || '',
-                    phone: client.phone || '',
-                    nationality: client.nationality || '',
-                    passportNumber: client.passportNumber || '',
-                    dateOfBirth: client.dateOfBirth ? new Date(client.dateOfBirth).toISOString().split('T')[0] : '',
-                  });
-                  setShowEditModal(true);
-                }}
-              >
-                <Edit className="w-4 h-4" />
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={async () => {
+                   if (confirm('Are you sure you want to delete this client? This action cannot be undone.')) {
+                     const success = await deleteClient(client._id);
+                     if (success) {
+                       navigate('/clients');
+                     }
+                   }
+                  }}
+                  title="Delete Client"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  onClick={() => {
+                    setEditingClient({
+                      name: client.name || '',
+                      email: client.email || '',
+                      phone: client.phone || '',
+                      nationality: client.nationality || '',
+                      passportNumber: client.passportNumber || '',
+                      dateOfBirth: client.dateOfBirth ? new Date(client.dateOfBirth).toISOString().split('T')[0] : '',
+                    });
+                    setShowEditModal(true);
+                  }}
+                  title="Edit Client"
+                >
+                  <Edit className="w-4 h-4" />
+                </Button>
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">

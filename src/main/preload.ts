@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     list: createInvoker(IPC_CHANNELS.EXTRACTION_LIST),
     get: createInvoker(IPC_CHANNELS.EXTRACTION_GET),
     create: createInvoker(IPC_CHANNELS.EXTRACTION_CREATE),
+    update: createInvoker(IPC_CHANNELS.EXTRACTION_UPDATE),
     approve: createInvoker(IPC_CHANNELS.EXTRACTION_APPROVE),
     reject: createInvoker(IPC_CHANNELS.EXTRACTION_REJECT),
     delete: createInvoker(IPC_CHANNELS.EXTRACTION_DELETE),

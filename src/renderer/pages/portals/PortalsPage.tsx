@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Globe, ExternalLink, Trash2, X, Loader2 } from 'lucide-react';
+import { Plus, Globe, ExternalLink, Trash2, X, Loader2, Edit } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label } from '../../components/ui';
 import { usePortalStore } from '../../stores';
 
@@ -10,14 +10,16 @@ export function PortalsPage() {
     error, 
     fetchPortals, 
     createPortal, 
+    updatePortal,
     deletePortal,
     clearError 
   } = usePortalStore();
 
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [creating, setCreating] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [newPortal, setNewPortal] = useState({
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
     name: '',
     url: '',
     country: '',
@@ -28,18 +30,48 @@ export function PortalsPage() {
     fetchPortals();
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setCreating(true);
-    const result = await createPortal(newPortal);
-    setCreating(false);
+    setIsSubmitting(true);
+    
+    let result;
+    if (editingId) {
+      result = await updatePortal(editingId, formData);
+    } else {
+      result = await createPortal(formData);
+    }
+    
+    setIsSubmitting(false);
     if (result) {
-      setShowCreateModal(false);
-      setNewPortal({ name: '', url: '', country: '', description: '' });
+      closeModal();
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const openCreateModal = () => {
+    setEditingId(null);
+    setFormData({ name: '', url: '', country: '', description: '' });
+    setShowModal(true);
+  };
+
+  const openEditModal = (portal: typeof portals[0]) => {
+    setEditingId(portal._id);
+    setFormData({
+      name: portal.name,
+      url: portal.url,
+      country: portal.country,
+      description: portal.description || '',
+    });
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setEditingId(null);
+    setFormData({ name: '', url: '', country: '', description: '' });
+  };
+
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
     if (!confirm('Are you sure you want to delete this portal?')) return;
     setDeleting(id);
     await deletePortal(id);
@@ -57,7 +89,7 @@ export function PortalsPage() {
               Configure immigration portal URLs for automation.
             </p>
           </div>
-          <Button onClick={() => setShowCreateModal(true)}>
+          <Button onClick={openCreateModal}>
             <Plus className="w-4 h-4" />
             Add Portal
           </Button>
@@ -89,7 +121,7 @@ export function PortalsPage() {
           <p className="empty-state-description">
             Add immigration portal URLs to enable automation.
           </p>
-          <Button onClick={() => setShowCreateModal(true)}>
+          <Button onClick={openCreateModal}>
             <Plus className="w-4 h-4" />
             Add Portal
           </Button>
@@ -100,7 +132,7 @@ export function PortalsPage() {
       {portals.length > 0 && (
         <div className="card-grid">
           {portals.map((portal) => (
-            <Card key={portal._id} className="hover-lift">
+            <Card key={portal._id} className="hover-lift group relative">
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
@@ -112,19 +144,29 @@ export function PortalsPage() {
                       <CardDescription className="text-xs">{portal.country}</CardDescription>
                     </div>
                   </div>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="text-muted-foreground hover:text-destructive"
-                    onClick={() => handleDelete(portal._id)}
-                    disabled={deleting === portal._id}
-                  >
-                    {deleting === portal._id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                  </Button>
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-muted-foreground hover:text-primary"
+                      onClick={() => openEditModal(portal)}
+                    >
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={(e) => handleDelete(portal._id, e)}
+                      disabled={deleting === portal._id}
+                    >
+                      {deleting === portal._id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -150,28 +192,30 @@ export function PortalsPage() {
         </div>
       )}
 
-      {/* Create Modal */}
-      {showCreateModal && (
+      {/* Create/Edit Modal */}
+      {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-md animate-fade-in">
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>Add New Portal</CardTitle>
-                <button onClick={() => setShowCreateModal(false)} className="text-muted-foreground hover:text-foreground">
+                <CardTitle>{editingId ? 'Edit Portal' : 'Add New Portal'}</CardTitle>
+                <button onClick={closeModal} className="text-muted-foreground hover:text-foreground">
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <CardDescription>Configure a new immigration portal</CardDescription>
+              <CardDescription>
+                {editingId ? 'Update portal configuration' : 'Configure a new immigration portal'}
+              </CardDescription>
             </CardHeader>
-            <form onSubmit={handleCreate}>
+            <form onSubmit={handleSubmit}>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">Portal Name *</Label>
                   <Input
                     id="name"
                     placeholder="e.g., US Visa Application"
-                    value={newPortal.name}
-                    onChange={(e) => setNewPortal(prev => ({ ...prev, name: e.target.value }))}
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                     required
                   />
                 </div>
@@ -181,8 +225,8 @@ export function PortalsPage() {
                     id="url"
                     type="url"
                     placeholder="https://..."
-                    value={newPortal.url}
-                    onChange={(e) => setNewPortal(prev => ({ ...prev, url: e.target.value }))}
+                    value={formData.url}
+                    onChange={(e) => setFormData(prev => ({ ...prev, url: e.target.value }))}
                     required
                   />
                 </div>
@@ -191,8 +235,8 @@ export function PortalsPage() {
                   <Input
                     id="country"
                     placeholder="e.g., United States"
-                    value={newPortal.country}
-                    onChange={(e) => setNewPortal(prev => ({ ...prev, country: e.target.value }))}
+                    value={formData.country}
+                    onChange={(e) => setFormData(prev => ({ ...prev, country: e.target.value }))}
                     required
                   />
                 </div>
@@ -201,18 +245,18 @@ export function PortalsPage() {
                   <Input
                     id="description"
                     placeholder="Optional description"
-                    value={newPortal.description}
-                    onChange={(e) => setNewPortal(prev => ({ ...prev, description: e.target.value }))}
+                    value={formData.description}
+                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                   />
                 </div>
               </CardContent>
               <div className="flex justify-end gap-3 p-6 pt-0">
-                <Button type="button" variant="outline" onClick={() => setShowCreateModal(false)}>
+                <Button type="button" variant="outline" onClick={closeModal}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={creating}>
-                  {creating && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Create Portal
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {editingId ? 'Save Changes' : 'Create Portal'}
                 </Button>
               </div>
             </form>

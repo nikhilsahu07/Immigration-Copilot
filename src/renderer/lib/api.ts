@@ -72,6 +72,7 @@ export interface ElectronAPI {
     list: (data: { clientId: string }) => Promise<Result<Extraction[]>>;
     get: (data: { id: string }) => Promise<Result<Extraction>>;
     create: (data: CreateExtractionInput) => Promise<Result<Extraction>>;
+    update: (data: { id: string; data: { extractedData?: unknown } }) => Promise<Result<Extraction>>;
     approve: (data: { id: string; data?: ApproveExtractionInput }) => Promise<Result<Extraction>>;
     reject: (data: { id: string; data: RejectExtractionInput }) => Promise<Result<Extraction>>;
     delete: (data: { id: string }) => Promise<Result<void>>;

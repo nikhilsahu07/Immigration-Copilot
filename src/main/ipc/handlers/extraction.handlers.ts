@@ -120,6 +120,36 @@ export function registerExtractionHandlers(): void {
     }
   });
 
+  // Update extraction (edit extracted data)
+  ipcMain.handle(IPC_CHANNELS.EXTRACTION_UPDATE, async (_event, { id, data }) => {
+    try {
+      const session = requireAuth();
+      
+      const extraction = await extractionRepository.update(
+        id,
+        session.companyId,
+        data
+      );
+
+      if (!extraction) {
+        throw createError(ERROR_CODES.EXTRACTION_NOT_FOUND);
+      }
+
+      await auditLogRepository.log(
+        session.companyId,
+        session.agentId,
+        'EXTRACTION_UPDATED',
+        'extraction',
+        id
+      );
+
+      return success(extraction);
+    } catch (error) {
+      logger.error('Update extraction error:', error);
+      return handleError(error);
+    }
+  });
+
   // Approve extraction
   ipcMain.handle(IPC_CHANNELS.EXTRACTION_APPROVE, async (_event, { id, data }) => {
     try {

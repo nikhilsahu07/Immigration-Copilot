@@ -60,6 +60,7 @@ export async function getPresignedUrl(key: string): Promise<{ url: string; expir
   const command = new GetObjectCommand({
     Bucket: config.bucketName,
     Key: key,
+    ResponseContentDisposition: 'inline',
   });
 
   const url = await getSignedUrl(client, command, {

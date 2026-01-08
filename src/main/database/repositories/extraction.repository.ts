@@ -129,6 +129,31 @@ export class ExtractionRepository {
     return null;
   }
 
+  async update(id: string, companyId: string, data: { extractedData?: ExtractedData; status?: ExtractionStatus }): Promise<Extraction | null> {
+    const updateData: Record<string, unknown> = {
+      updatedAt: new Date(),
+    };
+
+    if (data.extractedData) {
+      updateData.extractedData = data.extractedData;
+    }
+    if (data.status) {
+      updateData.status = data.status;
+    }
+
+    const result = await this.collection.findOneAndUpdate(
+      { _id: new ObjectId(id), companyId } as Filter<Extraction>,
+      { $set: updateData } as UpdateFilter<Extraction>,
+      { returnDocument: 'after' }
+    );
+
+    if (result) {
+      logger.info(`Extraction updated: ${id}`);
+      return { ...result, _id: result._id.toString() } as Extraction;
+    }
+    return null;
+  }
+
   async delete(id: string, companyId: string): Promise<boolean> {
     const result = await this.collection.deleteOne({ 
       _id: new ObjectId(id), 

@@ -39,6 +39,7 @@ export const IPC_CHANNELS = {
   EXTRACTION_LIST: 'extraction:list',
   EXTRACTION_GET: 'extraction:get',
   EXTRACTION_CREATE: 'extraction:create',
+  EXTRACTION_UPDATE: 'extraction:update',
   EXTRACTION_APPROVE: 'extraction:approve',
   EXTRACTION_REJECT: 'extraction:reject',
   EXTRACTION_DELETE: 'extraction:delete',
