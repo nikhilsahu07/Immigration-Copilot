@@ -1,0 +1,209 @@
+Folder PATH listing for volume Windows
+Volume serial number is 96E0-2891
+C:\USERS\HEYNI\ONEDRIVE\DESKTOP\EMIGRATION-COPILOT
+ª   .env
+ª   .env.example
+ª   .gitignore
+ª   components.json
+ª   forge.config.ts
+ª   jest.config.js
+ª   package-lock.json
+ª   package.json
+ª   postcss.config.js
+ª   README.md
+ª   tailwind.config.js
+ª   tree.txt
+ª   tsconfig.json
+ª   webpack.main.config.ts
+ª   webpack.renderer.config.ts
+ª   webpack.rules.ts
+ª                  
++---docs
+ª       DIRECTORY_STRUCTURE.md
+ª       PROJECT_OVERVIEW.md
+ª       TECH_STACKS.md
+ª                     
++---resources
+ª   +---icons
+ª   ª       README.md
+ª   ª       
+ª   +---logs
+ª           automation.log
+ª           combined.log
+ª           error.log
+ª           exceptions.log
+ª           rejections.log
+ª           
++---src
+ª   +---main
+ª   ª   ª   index.ts
+ª   ª   ª   preload.ts
+ª   ª   ª   
+ª   ª   +---config
+ª   ª   ª       ai.config.ts
+ª   ª   ª       database.config.ts
+ª   ª   ª       environment.ts
+ª   ª   ª       index.ts
+ª   ª   ª       storage.config.ts
+ª   ª   ª       
+ª   ª   +---core
+ª   ª   ª       browser-view-manager.ts
+ª   ª   ª       error-handler.ts
+ª   ª   ª       index.ts
+ª   ª   ª       logger.ts
+ª   ª   ª       window-manager.ts
+ª   ª   ª       
+ª   ª   +---database
+ª   ª   ª   ª   index.ts
+ª   ª   ª   ª   
+ª   ª   ª   +---repositories
+ª   ª   ª           agent.repository.ts
+ª   ª   ª           audit-log.repository.ts
+ª   ª   ª           automation-job.repository.ts
+ª   ª   ª           client.repository.ts
+ª   ª   ª           company.repository.ts
+ª   ª   ª           document.repository.ts
+ª   ª   ª           extraction.repository.ts
+ª   ª   ª           index.ts
+ª   ª   ª           portal.repository.ts
+ª   ª   ª           
+ª   ª   +---ipc
+ª   ª   ª   ª   index.ts
+ª   ª   ª   ª   
+ª   ª   ª   +---handlers
+ª   ª   ª           auth.handlers.ts
+ª   ª   ª           browser-view.handlers.ts
+ª   ª   ª           client.handlers.ts
+ª   ª   ª           document.handlers.ts
+ª   ª   ª           extraction.handlers.ts
+ª   ª   ª           portal.handlers.ts
+ª   ª   ª           
+ª   ª   +---services
+ª   ª   ª   +---ai
+ª   ª   ª   ª       gemini.service.ts
+ª   ª   ª   ª       index.ts
+ª   ª   ª   ª       
+ª   ª   ª   +---auth
+ª   ª   ª           auth.service.ts
+ª   ª   ª           index.ts
+ª   ª   ª           
+ª   ª   +---storage
+ª   ª           document-manager.ts
+ª   ª           index.ts
+ª   ª           s3-client.ts
+ª   ª           
+ª   +---renderer
+ª   ª   ª   App.tsx
+ª   ª   ª   index.css
+ª   ª   ª   index.html
+ª   ª   ª   index.tsx
+ª   ª   ª   
+ª   ª   +---components
+ª   ª   ª   +---layout
+ª   ª   ª   ª       index.ts
+ª   ª   ª   ª       MainLayout.tsx
+ª   ª   ª   ª       Sidebar.tsx
+ª   ª   ª   ª       
+ª   ª   ª   +---ui
+ª   ª   ª           button.tsx
+ª   ª   ª           card.tsx
+ª   ª   ª           index.ts
+ª   ª   ª           input.tsx
+ª   ª   ª           label.tsx
+ª   ª   ª           progress.tsx
+ª   ª   ª           scroll-area.tsx
+ª   ª   ª           separator.tsx
+ª   ª   ª           
+ª   ª   +---lib
+ª   ª   ª       api.ts
+ª   ª   ª       utils.ts
+ª   ª   ª       
+ª   ª   +---pages
+ª   ª   ª   +---auth
+ª   ª   ª   ª       index.ts
+ª   ª   ª   ª       LoginPage.tsx
+ª   ª   ª   ª       RegisterPage.tsx
+ª   ª   ª   ª       
+ª   ª   ª   +---automation
+ª   ª   ª   ª       AutomationPage.tsx
+ª   ª   ª   ª       index.ts
+ª   ª   ª   ª       
+ª   ª   ª   +---clients
+ª   ª   ª   ª       ClientDetailPage.tsx
+ª   ª   ª   ª       ClientsPage.tsx
+ª   ª   ª   ª       index.ts
+ª   ª   ª   ª       
+ª   ª   ª   +---dashboard
+ª   ª   ª   ª       DashboardPage.tsx
+ª   ª   ª   ª       index.ts
+ª   ª   ª   ª       
+ª   ª   ª   +---extraction
+ª   ª   ª   ª       ExtractionPage.tsx
+ª   ª   ª   ª       index.ts
+ª   ª   ª   ª       
+ª   ª   ª   +---portals
+ª   ª   ª   ª       index.ts
+ª   ª   ª   ª       PortalsPage.tsx
+ª   ª   ª   ª       
+ª   ª   ª   +---settings
+ª   ª   ª           index.ts
+ª   ª   ª           SettingsPage.tsx
+ª   ª   ª           
+ª   ª   +---stores
+ª   ª           auth.store.ts
+ª   ª           automation.store.ts
+ª   ª           client.store.ts
+ª   ª           index.ts
+ª   ª           
+ª   +---shared
+ª       +---constants
+ª       ª       document-types.constants.ts
+ª       ª       error-codes.constants.ts
+ª       ª       extraction-status.constants.ts
+ª       ª       field-types.constants.ts
+ª       ª       index.ts
+ª       ª       ipc-channels.constants.ts
+ª       ª       job-status.constants.ts
+ª       ª       
+ª       +---schemas
+ª       ª       agent.schema.ts
+ª       ª       automation.schema.ts
+ª       ª       client.schema.ts
+ª       ª       company.schema.ts
+ª       ª       document.schema.ts
+ª       ª       extraction.schema.ts
+ª       ª       index.ts
+ª       ª       portal.schema.ts
+ª       ª       
+ª       +---types
+ª       ª       agent.types.ts
+ª       ª       automation.types.ts
+ª       ª       client.types.ts
+ª       ª       common.types.ts
+ª       ª       company.types.ts
+ª       ª       document.types.ts
+ª       ª       extraction.types.ts
+ª       ª       gemini.types.ts
+ª       ª       index.ts
+ª       ª       ipc-contracts.types.ts
+ª       ª       portal.types.ts
+ª       ª       
+ª       +---utils
+ª               date-utils.ts
+ª               format-utils.ts
+ª               index.ts
+ª               validation-utils.ts
+ª               
++---toyVersion
+    ª   forge.config.js
+    ª   package.json
+    ª   webpack.main.config.js
+    ª   webpack.renderer.config.js
+    ª   webpack.rules.js
+    ª   
+    +---src
+            index.css
+            index.html
+            main.js
+            preload.js
+            renderer.js

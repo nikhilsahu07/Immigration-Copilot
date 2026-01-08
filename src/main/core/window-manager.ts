@@ -1,4 +1,4 @@
-import { BrowserWindow, app } from 'electron';
+import { BrowserWindow, app, session } from 'electron';
 import path from 'path';
 import { logger } from './logger';
 
@@ -17,6 +17,22 @@ export class WindowManager {
       return this.mainWindow;
     }
 
+    const isDev = !app.isPackaged;
+
+    // ✅ Set CSP BEFORE creating window
+    if (isDev) {
+      const ses = session.defaultSession;
+      ses.webRequest.onHeadersReceived((details, callback) => {
+        callback({
+          responseHeaders: {
+            ...details.responseHeaders,
+            // Override ANY CSP with a permissive one for development
+            'Content-Security-Policy': ["default-src * 'unsafe-inline' 'unsafe-eval' data: blob: ws: wss:;"]
+          }
+        });
+      });
+    }
+
     this.mainWindow = new BrowserWindow({
       width: 1600,
       height: 900,
@@ -30,6 +46,7 @@ export class WindowManager {
         contextIsolation: true,
         preload: this.preloadEntry,
         sandbox: false,
+        webSecurity: false, // Keep this
       },
       show: false,
     });
@@ -37,14 +54,21 @@ export class WindowManager {
     // Load the app
     this.mainWindow.loadURL(this.webpackEntry);
 
+    // ✅ Open DevTools in development
+    if (isDev) {
+      this.mainWindow.webContents.openDevTools();
+    }
+
     // Show window when ready
     this.mainWindow.once('ready-to-show', () => {
       this.mainWindow?.show();
+      logger.info('Main window shown');
     });
 
     // Handle window closed
     this.mainWindow.on('closed', () => {
       this.mainWindow = null;
+      logger.info('Main window closed');
     });
 
     // Log window events
@@ -56,6 +80,7 @@ export class WindowManager {
       logger.debug('Main window blurred');
     });
 
+    logger.info('Main window created successfully');
     return this.mainWindow;
   }
 

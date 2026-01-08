@@ -44,6 +44,12 @@ const config: ForgeConfig = {
     new AutoUnpackNativesPlugin({}),
     new WebpackPlugin({
       mainConfig,
+      // REMOVE devContentSecurityPolicy - not working
+      devServer: {
+        hot: false,
+        liveReload: false,
+        client: false, // ✅ COMPLETELY DISABLE webpack-dev-server client
+      },
       renderer: {
         config: rendererConfig,
         entryPoints: [

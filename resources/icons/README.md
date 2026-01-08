@@ -1,5 +1,4 @@
 # Placeholder for application icon
-# Replace with actual icon files:
+# Add icon files:
 # - icon.ico (Windows)
-# - icon.icns (macOS)  
-# - icon.png (Linux)
+# - icon.icns (macOS)

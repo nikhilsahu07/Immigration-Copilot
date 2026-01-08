@@ -18,4 +18,9 @@ export const mainConfig: Configuration = {
     'playwright-core': 'commonjs playwright-core',
     'bcrypt': 'commonjs bcrypt',
   },
+  // FIX: Enable __dirname and __filename
+  node: {
+    __dirname: false,
+    __filename: false,
+  },
 };
