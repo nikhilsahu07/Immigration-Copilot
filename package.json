@@ -2,7 +2,6 @@
   "name": "immigration-copilot",
   "productName": "Immigration Copilot",
   "version": "1.0.0",
-  "type": "module",
   "description": "AI-powered desktop application for immigration agencies to automate visa form filling",
   "main": ".webpack/main",
   "scripts": {

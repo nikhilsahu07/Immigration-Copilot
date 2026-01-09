@@ -7,6 +7,7 @@ import type { Extraction, DocumentWithPresignedUrl } from '../../../shared/types
 import { PromptInput } from '../../components/PromptInput';
 import { DocumentPreview } from '../../components/DocumentPreview';
 import { formatRelativeTime } from '../../../shared/utils';
+import { COUNTRIES } from '../../../shared/constants/countries.constants';
 
 export function ExtractionPage() {
   const { clientId } = useParams<{ clientId: string }>();
@@ -221,6 +222,84 @@ export function ExtractionPage() {
     }
   };
 
+  const renderFieldInput = (sectionKey: string, fieldKey: string, value: unknown, index?: number) => {
+    const normKey = fieldKey.toLowerCase();
+    const commonClass = "flex-1 text-sm text-right rounded border border-input px-2 py-1 bg-background";
+
+    // Nationality / Country
+    if (normKey.includes('nationality') || normKey.includes('country') || normKey.includes('citizenship')) {
+      return (
+        <select
+          value={String(value || '')}
+          onChange={(e) => handleFieldChange(sectionKey, fieldKey, e.target.value, index)}
+          className={commonClass}
+        >
+          <option value="">Select...</option>
+          {COUNTRIES.map(country => (
+            <option key={country.code} value={country.name}>{country.name}</option>
+          ))}
+        </select>
+      );
+    }
+
+    // Date
+    if (normKey.includes('date') || normKey.includes('dob') || normKey.includes('birth') || normKey.includes('valid') || normKey.includes('expires')) {
+      let dateValue = String(value || '');
+      // Attempt to format to YYYY-MM-DD for input type="date"
+      const dateObj = new Date(dateValue);
+      if (!isNaN(dateObj.getTime()) && dateValue && !dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+         try {
+           dateValue = dateObj.toISOString().split('T')[0];
+         } catch (e) {
+           // If conversion fails, keep original
+         }
+      }
+
+      return (
+        <input
+          type="date"
+          value={dateValue}
+          onChange={(e) => handleFieldChange(sectionKey, fieldKey, e.target.value, index)}
+          className={commonClass}
+        />
+      );
+    }
+
+    // Number / Income
+    if (normKey.includes('income') || normKey.includes('salary') || normKey.includes('amount') || (normKey.includes('year') && !normKey.includes('date'))) {
+      return (
+         <input
+          type="number"
+          value={String(value || '')}
+          onChange={(e) => handleFieldChange(sectionKey, fieldKey, e.target.value, index)}
+          className={commonClass}
+        />
+      );
+    }
+
+    // Phone
+    if (normKey.includes('phone') || normKey.includes('mobile')) {
+       return (
+         <input
+          type="tel"
+          value={String(value || '')}
+          onChange={(e) => handleFieldChange(sectionKey, fieldKey, e.target.value, index)}
+          className={commonClass}
+        />
+      );
+    }
+
+     // Default Text
+     return (
+        <input
+          type="text"
+          value={String(value || '')}
+          onChange={(e) => handleFieldChange(sectionKey, fieldKey, e.target.value, index)}
+          className={commonClass}
+        />
+     );
+  };
+
   const renderDataSection = (title: string, sectionKey: string, data: Record<string, unknown> | undefined) => {
     if (!data || Object.keys(data).length === 0) return null;
     const sectionData = isEditing ? (editedData[sectionKey] as Record<string, unknown>) || data : data;
@@ -244,12 +323,7 @@ export function ExtractionPage() {
                 {key.replace(/([A-Z])/g, ' $1').trim()}
               </span>
               {isEditing ? (
-                <input
-                  type="text"
-                  value={String(value || '')}
-                  onChange={(e) => handleFieldChange(sectionKey, key, e.target.value)}
-                  className="flex-1 text-sm text-right rounded border border-input px-2 py-1 bg-background"
-                />
+                renderFieldInput(sectionKey, key, value)
               ) : (
                 <span className="text-sm font-medium text-right">{String(value) || 'N/A'}</span>
               )}
@@ -286,12 +360,7 @@ export function ExtractionPage() {
                       {key.replace(/([A-Z])/g, ' $1').trim()}
                     </span>
                     {isEditing ? (
-                      <input
-                        type="text"
-                        value={String(value || '')}
-                        onChange={(e) => handleFieldChange(sectionKey, key, e.target.value, i)}
-                        className="flex-1 text-sm text-right rounded border border-input px-2 py-1 bg-background"
-                      />
+                      renderFieldInput(sectionKey, key, value, i)
                     ) : (
                       <span className="text-sm font-medium text-right">{String(value) || 'N/A'}</span>
                     )}
