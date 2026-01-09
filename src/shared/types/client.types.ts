@@ -11,6 +11,7 @@ export interface Client extends BaseEntity, WithCompany, WithAgent {
   address?: ClientAddress;
   customFields?: Record<string, unknown>;
   notes?: string;
+  portalUrl?: string;
   status: ClientStatus;
 }
 

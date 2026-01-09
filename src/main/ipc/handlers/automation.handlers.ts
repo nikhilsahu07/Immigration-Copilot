@@ -69,8 +69,16 @@ export function registerAutomationHandlers(): void {
     }
   });
 
-  // Note: Other handlers (approveMapping, submitForm, etc.) should be implemented 
-  // and called on automationService as well, but for now we focus on the requested start flow.
+  // Approve Mapping / Proceed
+  ipcMain.handle(IPC_CHANNELS.AUTOMATION_APPROVE_MAPPING, async (_event, mapping) => {
+    try {
+      await automationService.approveMapping(mapping);
+      return success(undefined);
+    } catch (error) {
+      logger.error('Approve mapping error:', error);
+      return handleError(error);
+    }
+  });
   
   logger.debug('Automation handlers registered');
 }
