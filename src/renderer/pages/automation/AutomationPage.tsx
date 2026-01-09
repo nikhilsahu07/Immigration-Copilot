@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Play, Pause, Square, AlertTriangle, KeyRound, CheckCircle, Loader2, ChevronDown, Sparkles } from 'lucide-react';
-import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label, Progress } from '../../components/ui';
+import { Play, Pause, Square, AlertTriangle, KeyRound, CheckCircle, Loader2, Globe, MessageSquare, FileText, Bot, Sparkles, ArrowRight } from 'lucide-react';
+import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label, Progress, Textarea } from '../../components/ui';
 import { useAutomationStore, useClientStore, usePortalStore } from '../../stores';
 import { api } from '../../lib/api';
 import type { Extraction } from '../../../shared/types';
-import { PromptInput } from '../../components/PromptInput';
 
 export function AutomationPage() {
   const {
@@ -26,6 +25,7 @@ export function AutomationPage() {
     submitOtp,
     resumeAfterCaptcha,
     loadUrl,
+    hidePreview,
   } = useAutomationStore();
 
   const { clients, fetchClients, isLoading: clientsLoading } = useClientStore();
@@ -36,7 +36,8 @@ export function AutomationPage() {
   const [otpCode, setOtpCode] = useState('');
   const [approvedExtraction, setApprovedExtraction] = useState<Extraction | null>(null);
   const [loadingExtraction, setLoadingExtraction] = useState(false);
-  const [aiPrompts, setAiPrompts] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [browserViewShown, setBrowserViewShown] = useState(false);
 
   useEffect(() => {
     fetchClients();
@@ -51,6 +52,22 @@ export function AutomationPage() {
       setApprovedExtraction(null);
     }
   }, [selectedClient]);
+
+  // When portal is selected, show BrowserView immediately
+  useEffect(() => {
+    if (selectedPortal) {
+      const portal = portals.find(p => p._id === selectedPortal);
+      if (portal) {
+        loadUrl(portal.url);
+        setBrowserViewShown(true);
+      }
+    } else {
+      if (browserViewShown && !isRunning) {
+        hidePreview();
+        setBrowserViewShown(false);
+      }
+    }
+  }, [selectedPortal]);
 
   const loadApprovedExtraction = async (clientId: string) => {
     setLoadingExtraction(true);
@@ -73,15 +90,12 @@ export function AutomationPage() {
   const handleStart = async () => {
     if (!selectedClient || !selectedPortal || !approvedExtraction) return;
     
-    const portal = portals.find(p => p._id === selectedPortal);
-    if (portal) {
-      await loadUrl(portal.url);
-      await startAutomation({
-        clientId: selectedClient,
-        portalId: selectedPortal,
-        extractionId: approvedExtraction._id,
-      });
-    }
+    await startAutomation({
+      clientId: selectedClient,
+      portalId: selectedPortal,
+      extractionId: approvedExtraction._id,
+      customPrompt: customPrompt || undefined,
+    });
   };
 
   const handleApprove = async () => {
@@ -95,6 +109,32 @@ export function AutomationPage() {
       await submitOtp(otpCode);
       setOtpCode('');
     }
+  };
+
+  const handleStop = async () => {
+    await stopAutomation();
+    setBrowserViewShown(false);
+    setSelectedPortal('');
+  };
+
+  // Get status icon based on message
+  const getStatusIcon = () => {
+    if (statusMessage.includes('Loading') || statusMessage.includes('Downloading')) {
+      return <Globe className="w-5 h-5 text-blue-500 animate-pulse" />;
+    }
+    if (statusMessage.includes('Processing') || statusMessage.includes('AI')) {
+      return <Bot className="w-5 h-5 text-purple-500 animate-pulse" />;
+    }
+    if (statusMessage.includes('Filling')) {
+      return <FileText className="w-5 h-5 text-orange-500 animate-pulse" />;
+    }
+    if (statusMessage.includes('filled') || statusMessage.includes('Review')) {
+      return <Sparkles className="w-5 h-5 text-green-500" />;
+    }
+    if (isPaused) {
+      return <Pause className="w-5 h-5 text-yellow-500" />;
+    }
+    return <Loader2 className="w-5 h-5 animate-spin text-primary" />;
   };
 
   return (
@@ -180,6 +220,23 @@ export function AutomationPage() {
                 )}
               </div>
 
+              {/* AI Instructions - Before Start Button */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4" />
+                  AI Instructions (Optional)
+                </Label>
+                <Textarea
+                  placeholder="E.g., 'Fill professionally' or 'Skip optional fields' or 'Use N/A for empty values'"
+                  value={customPrompt}
+                  onChange={(e) => setCustomPrompt(e.target.value)}
+                  className="min-h-[80px] text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Add custom instructions for the AI to follow when filling the form.
+                </p>
+              </div>
+
               <Button 
                 onClick={handleStart} 
                 className="w-full" 
@@ -201,11 +258,7 @@ export function AutomationPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-3">
-                  {isPaused ? (
-                    <Pause className="w-5 h-5 text-yellow-500" />
-                  ) : (
-                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                  )}
+                  {getStatusIcon()}
                   <span className="text-sm">{statusMessage}</span>
                 </div>
                 <Progress value={progress} />
@@ -224,7 +277,7 @@ export function AutomationPage() {
                   <Pause className="w-4 h-4" /> Pause
                 </Button>
               )}
-              <Button onClick={stopAutomation} variant="destructive">
+              <Button onClick={handleStop} variant="destructive">
                 <Square className="w-4 h-4" /> Stop
               </Button>
             </div>
@@ -275,12 +328,15 @@ export function AutomationPage() {
               </Card>
             )}
 
-            {/* Form Approval */}
+            {/* Form Approval - form is already filled, just needs approval to submit */}
             {needsApproval && currentMapping && (
-              <Card>
+              <Card className="border-green-500">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Review Mapping</CardTitle>
-                  <CardDescription>{currentMapping.fields.length} fields ready to fill</CardDescription>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-green-600" />
+                    Form Filled - Review & Submit
+                  </CardTitle>
+                  <CardDescription>{currentMapping.fields.length} fields filled</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="max-h-60 overflow-y-auto space-y-2">
@@ -295,54 +351,20 @@ export function AutomationPage() {
                         <p className="text-muted-foreground truncate">{field.value}</p>
                       </div>
                     ))}
+                    {currentMapping.fields.length > 5 && (
+                      <p className="text-xs text-muted-foreground text-center">
+                        +{currentMapping.fields.length - 5} more fields
+                      </p>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <Button onClick={handleApprove} className="flex-1">
-                      <CheckCircle className="w-4 h-4" /> Approve & Fill
+                      <ArrowRight className="w-4 h-4" /> Submit Form
                     </Button>
                   </div>
                 </CardContent>
               </Card>
             )}
-
-            {/* AI Instructions */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-primary" />
-                  AI Instructions
-                </CardTitle>
-                <CardDescription>Send custom prompts for the current page</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {aiPrompts.length > 0 && (
-                  <div className="max-h-32 overflow-y-auto space-y-2 mb-2">
-                    {aiPrompts.map((prompt, i) => (
-                      <div 
-                        key={i}
-                        className={`text-xs p-2 rounded ${
-                          prompt.role === 'user' 
-                            ? 'bg-primary/10 text-primary' 
-                            : 'bg-muted'
-                        }`}
-                      >
-                        {prompt.content}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <PromptInput
-                  placeholder="E.g., 'Skip optional fields' or 'Use N/A for empty values'"
-                  onSubmit={(prompt) => {
-                    setAiPrompts(prev => [...prev, { role: 'user', content: prompt }]);
-                    // TODO: Send prompt to automation for processing
-                    // This would typically update the form mapping strategy
-                    setAiPrompts(prev => [...prev, { role: 'assistant', content: 'Instruction noted. Will apply to current page.' }]);
-                  }}
-                  disabled={!isRunning || isPaused}
-                />
-              </CardContent>
-            </Card>
           </>
         )}
       </div>
@@ -351,26 +373,32 @@ export function AutomationPage() {
       <div className="split-view-right flex items-center justify-center">
         <div className="text-center text-muted-foreground">
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
-            <ChevronDown className="w-8 h-8" />
+            <Globe className="w-8 h-8" />
           </div>
           <p className="text-lg font-medium">Browser Preview</p>
           <p className="text-sm">
-            {isRunning 
+            {browserViewShown || isRunning 
               ? (
                 <div className="space-y-4">
                   <p>The portal is displayed in the embedded browser view</p>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => stopAutomation()}
-                    className="gap-2"
-                  >
-                    <Square className="w-4 h-4" />
-                    Close Preview
-                  </Button>
+                  {!isRunning && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        setSelectedPortal('');
+                        hidePreview();
+                        setBrowserViewShown(false);
+                      }}
+                      className="gap-2"
+                    >
+                      <Square className="w-4 h-4" />
+                      Close Preview
+                    </Button>
+                  )}
                 </div>
               )
-              : 'Start automation to see the portal here'}
+              : 'Select a portal to preview it here'}
           </p>
         </div>
       </div>

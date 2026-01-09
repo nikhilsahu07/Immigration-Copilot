@@ -1,11 +1,11 @@
-
 import { 
   AutomationJob, 
   CreateJobInput, 
-  JobStatus, 
-  UpdateJobInput, 
   FormMapping,
-  AutomationState
+  AutomationState,
+  Client,
+  Extraction,
+  PauseReason
 } from '../../shared/types';
 import { 
   automationJobRepository, 
@@ -17,13 +17,18 @@ import { logger } from '../core/logger';
 import { createError } from '../core/error-handler';
 import { ERROR_CODES, IPC_CHANNELS } from '../../shared/constants';
 
+// ESM imports - replacing inline require() calls
+import { getWindowManager, getBrowserViewManager } from '../index';
+import { browserConnector } from '../automation/browser-connector';
+import { PageManager } from '../automation/page-manager';
+import { aiService } from './ai.service';
+import type { AutomatedField } from '../automation/fillers/base-filler';
 
 export class AutomationService {
   private currentJob: AutomationJob | null = null;
   private currentMapping: FormMapping | null = null;
   private isRunning: boolean = false;
   private isPaused: boolean = false;
-
 
   async start(
     companyId: string, 
@@ -54,73 +59,75 @@ export class AutomationService {
     this.isPaused = false;
 
     // 3. Initialize Browser View
-    this.emitStatus('Loading portal...', 0);
-    const bvm = require('../index').getBrowserViewManager();
+    this.emitStatus('Loading portal...', 5);
+    const bvm = getBrowserViewManager();
     if (bvm) {
-        await bvm.loadURL(portal.url);
-        bvm.show();
+      await bvm.loadURL(portal.url);
+      bvm.show();
     } else {
-        throw new Error('BrowserViewManager not available');
+      throw new Error('BrowserViewManager not available');
     }
     
-    // 4. Start the loop
-    const { browserConnector } = require('../automation/browser-connector');
+    // 4. Connect via CDP and start processing
     try {
-        await browserConnector.connect();
-        // Small delay to ensure Playwright sees the target
-        await new Promise(r => setTimeout(r, 1000));
-        this.processPage(client, extraction, portal.url);
+      this.emitStatus('Connecting to browser...', 10);
+      await browserConnector.connect();
+      // Small delay to ensure Playwright sees the target
+      await new Promise(r => setTimeout(r, 1000));
+      this.processPage(client, extraction, portal.url, input.customPrompt);
     } catch (e) {
-        logger.error('Failed to connect to browser', e);
-        this.stop();
-        throw e;
+      logger.error('Failed to connect to browser', e);
+      this.stop();
+      throw e;
     }
 
     return job;
   }
 
-  // Main processing loop
-  private async processPage(client: any, extraction: any, portalUrl: string) {
+  // Main processing loop - fill first, then ask approval
+  private async processPage(
+    client: Client, 
+    extraction: Extraction, 
+    portalUrl: string,
+    customPrompt?: string
+  ) {
     if (!this.isRunning || this.isPaused) return;
 
     try {
-      this.emitStatus('Analyzing page...', 10);
+      this.emitStatus('Downloading page structure...', 15);
       this.emitPageChanged(this.currentJob?.currentPage || 1, this.currentJob?.totalPages || 10);
-      
-      const { browserConnector } = require('../automation/browser-connector');
-      const { PageManager } = require('../automation/page-manager');
       
       // Get the page from Playwright
       const portalDomain = new URL(portalUrl || 'http://localhost').hostname;
       let page;
       try {
-          page = await browserConnector.getPageByUrl(portalDomain);
-      } catch (e) {
-          logger.warn(`Could not find page for ${portalDomain}, trying generic get`);
-          this.emitStatus('Waiting for page load...', 10);
-          setTimeout(() => this.processPage(client, extraction, portalUrl), 3000);
-          return;
+        page = await browserConnector.getPageByUrl(portalDomain);
+      } catch (_e) {
+        logger.warn(`Could not find page for ${portalDomain}, waiting for page load...`);
+        this.emitStatus('Waiting for page load...', 15);
+        setTimeout(() => this.processPage(client, extraction, portalUrl, customPrompt), 3000);
+        return;
       }
       
       const pageManager = new PageManager(page);
 
       // 1. Extract HTML
       const cleaned = await pageManager.extractHtml();
+      this.emitStatus('Page structure ready', 20);
 
       // 2. AI Analysis
-      this.emitStatus('Consulting AI Agent...', 30);
-      const { aiService } = require('./ai.service');
+      this.emitStatus('Processing with AI...', 30);
       const aiResult = await aiService.analyzePageAndMapFields(
         cleaned, 
         { 
-            clientProfile: client, 
-            extractedData: extraction.extractedData 
+          clientProfile: client, 
+          extractedData: extraction.extractedData 
         },
-        this.currentJob?.customPrompt
+        customPrompt
       );
+      this.emitStatus('Got AI response', 50);
 
       // 3. Handle Special States via PageManager + AI result
-      // Double check with PageManager's detection (runtime check vs AI check)
       const detection = await pageManager.detectSpecialElements();
       
       if (detection.hasCaptcha || aiResult.captchaDetected) {
@@ -135,23 +142,41 @@ export class AutomationService {
         return;
       }
 
-      // 4. emit mapping to UI
+      // 4. Ensure fields is an array (fix "fields is not iterable" error)
+      const fields = Array.isArray(aiResult.fields) ? aiResult.fields : [];
+      
+      if (fields.length === 0) {
+        this.emitStatus('No form fields detected on this page', 50);
+        logger.warn('AI returned no fields or invalid fields structure');
+        return;
+      }
+
+      // 5. Fill form FIRST (like toyVersion)
+      this.emitStatus('Filling form...', 60);
+      const mappedFields: AutomatedField[] = fields.map((f: Record<string, unknown>, i: number) => ({
+        fieldIndex: i,
+        fieldName: (f.fieldName as string) || '',
+        fieldLabel: (f.fieldName as string) || '',
+        fieldType: (f.fieldType as string) || 'text',
+        selector: (f.selector as string) || '',
+        value: (f.value as string) || '',
+        confidence: 'high',
+        reasoning: (f.reason as string) || '',
+      }));
+
+      await pageManager.fillForm(mappedFields);
+      this.emitStatus('Form filled. Please review.', 80);
+
+      // 6. Now emit mapping for approval
       const mapping = {
-        fields: aiResult.fields.map((f: any, i: number) => ({
-            ...f,
-            fieldIndex: i,
-            fieldType: f.fieldType || 'text', // AI should return type, else default
-            fieldLabel: f.fieldName,
-            confidence: 'high',
-        })),
-        submitButton: aiResult.actions.find((a: any) => a.type === 'submit' || a.type === 'click') || { selector: 'button[type="submit"]', text: 'Submit' },
+        fields: mappedFields,
+        captcha: { detected: false },
+        otp: { detected: false },
+        submitButton: { selector: 'button[type="submit"]', text: 'Submit' },
       };
 
-      this.currentMapping = mapping as any;
+      this.currentMapping = mapping as unknown as FormMapping;
       this.emitMapping(mapping);
-      this.emitStatus('Ready to fill form. Please review.', 50);
-
-      this.pendingActions = aiResult.actions;
 
     } catch (error) {
       logger.error('Page processing failed:', error);
@@ -159,74 +184,67 @@ export class AutomationService {
     }
   }
 
-  // Called when user clicks "Approve/Proceed"
-  async approveMapping(mapping: any) {
+  // Called when user clicks "Approve/Proceed" - clicks submit button
+  async approveMapping(_mapping: FormMapping) {
     if (!this.currentJob) return;
     
-    this.emitStatus('Filling form...', 70);
+    this.emitStatus('Submitting form...', 90);
     
     try {
-        const { browserConnector } = require('../automation/browser-connector');
-        const { PageManager } = require('../automation/page-manager');
-        
-        // Fetch fresh data
-        const client = await clientRepository.findById(this.currentJob.clientId, this.currentJob.companyId); 
-        const portal = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
-        
-        const portalDomain = new URL(portal?.url || 'http://localhost').hostname;
-        const page = await browserConnector.getPageByUrl(portalDomain);
-        const pageManager = new PageManager(page);
+      // Fetch fresh data
+      const portal = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
+      
+      const portalDomain = new URL(portal?.url || 'http://localhost').hostname;
+      const page = await browserConnector.getPageByUrl(portalDomain);
+      const pageManager = new PageManager(page);
 
-        // 1. Fill Fields
-        await pageManager.fillForm(mapping.fields);
+      // Click submit button using our robust method
+      const clicked = await pageManager.clickSubmitButton();
+      
+      if (!clicked) {
+        this.emitStatus('Could not find submit button', 90);
+        logger.warn('No submit button found on page');
+        return;
+      }
+      
+      this.emitStatus('Waiting for navigation...', 95);
+      
+      try {
+        await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+      } catch (_e) {
+        logger.warn('Nav timeout, checking if URL changed');
+      }
 
-        // 2. Submit
-        if (this.pendingActions && this.pendingActions.length > 0) {
-             this.emitStatus('Submitting...', 90);
-             const action = this.pendingActions.find((a: any) => a.type === 'submit' || a.type === 'click');
-             if (action && action.selector) {
-                 await page.click(action.selector);
-                 
-                 this.emitStatus('Waiting for navigation...', 95);
-                 
-                 try {
-                    await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
-                 } catch (e) {
-                     logger.warn('Nav timeout, checking if URL changed');
-                 }
-
-                 // Loop
-                 setTimeout(async () => {
-                     if (this.currentJob && this.isRunning && !this.isPaused) {
-                        try {
-                            const c = await clientRepository.findById(this.currentJob.clientId, this.currentJob.companyId);
-                            const e = await extractionRepository.findById(this.currentJob.extractionId, this.currentJob.companyId);
-                            const p = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
-                            
-                            if (c && e && p) {
-                                this.processPage(c, e, p.url);
-                            }
-                        } catch(err) {
-                            logger.error('Failed to restart loop', err);
-                        }
-                     }
-                 }, 3000);
-             }
-        } else {
-             this.emitStatus('No navigation action found', 100);
+      // Loop to next page
+      setTimeout(async () => {
+        if (this.currentJob && this.isRunning && !this.isPaused) {
+          try {
+            const c = await clientRepository.findById(this.currentJob.clientId, this.currentJob.companyId);
+            const e = await extractionRepository.findById(this.currentJob.extractionId, this.currentJob.companyId);
+            const p = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
+            
+            if (c && e && p) {
+              this.processPage(c, e, p.url);
+            }
+          } catch (err) {
+            logger.error('Failed to restart loop', err);
+          }
         }
+      }, 3000);
 
     } catch (error) {
-        logger.error('Execution failed:', error);
+      logger.error('Execution failed:', error);
+      this.emitStatus('Execution failed', 0);
     }
   }
 
-  private pendingActions: any[] = [];
-
   async stop(): Promise<void> {
     if (this.currentJob) {
-      const repo = require('../database/repositories/automation-job.repository').automationJobRepository;
-      await repo.update(this.currentJob._id, this.currentJob.companyId, { status: 'failed', completedAt: new Date() });
+      await automationJobRepository.update(
+        this.currentJob._id, 
+        this.currentJob.companyId, 
+        { status: 'failed', completedAt: new Date() }
+      );
       this.currentJob = null;
     }
     this.isRunning = false;
@@ -234,16 +252,24 @@ export class AutomationService {
     this.currentMapping = null;
     
     // Disconnect browser
-    const { browserConnector } = require('../automation/browser-connector');
     await browserConnector.disconnect();
+    
+    // Hide browser view
+    const bvm = getBrowserViewManager();
+    if (bvm) {
+      bvm.hide();
+    }
     
     this.emitStatus('Automation stopped', 0);
   }
 
-  async pause(reason?: string): Promise<void> {
+  async pause(reason?: PauseReason): Promise<void> {
     if (this.currentJob) {
-      const repo = require('../database/repositories/automation-job.repository').automationJobRepository;
-      const updated = await repo.update(this.currentJob._id, this.currentJob.companyId, { status: 'paused', pauseReason: reason || 'user_paused' });
+      const updated = await automationJobRepository.update(
+        this.currentJob._id, 
+        this.currentJob.companyId, 
+        { status: 'paused', pauseReason: reason || 'user_paused' }
+      );
       if (updated) this.currentJob = updated;
     }
     this.isPaused = true;
@@ -252,21 +278,24 @@ export class AutomationService {
 
   async resume(): Promise<void> {
     if (this.currentJob) {
-      const repo = require('../database/repositories/automation-job.repository').automationJobRepository;
-      const updated = await repo.update(this.currentJob._id, this.currentJob.companyId, { status: 'running', pauseReason: undefined });
+      const updated = await automationJobRepository.update(
+        this.currentJob._id, 
+        this.currentJob.companyId, 
+        { status: 'running', pauseReason: undefined }
+      );
       if (updated) this.currentJob = updated;
       
       // Resume loop
       if (this.isPaused) {
-         this.isPaused = false;
+        this.isPaused = false;
          
-         const c = await clientRepository.findById(this.currentJob.clientId, this.currentJob.companyId);
-         const e = await extractionRepository.findById(this.currentJob.extractionId, this.currentJob.companyId);
-         const p = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
+        const c = await clientRepository.findById(this.currentJob.clientId, this.currentJob.companyId);
+        const e = await extractionRepository.findById(this.currentJob.extractionId, this.currentJob.companyId);
+        const p = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
 
-         if (c && e && p) {
-             this.processPage(c, e, p.url);
-         }
+        if (c && e && p) {
+          this.processPage(c, e, p.url);
+        }
       }
     }
     this.isPaused = false;
@@ -288,31 +317,31 @@ export class AutomationService {
 
   // --- Helper to emit events to renderer ---
   private emitStatus(message: string, progress: number) {
-    const wm = require('../index').getWindowManager();
+    const wm = getWindowManager();
     const win = wm?.getMainWindow();
     win?.webContents.send(IPC_CHANNELS.EVENT_STATUS_UPDATE, { message, progress });
   }
 
   private emitPageChanged(page: number, total: number) {
-    const wm = require('../index').getWindowManager();
+    const wm = getWindowManager();
     const win = wm?.getMainWindow();
     win?.webContents.send(IPC_CHANNELS.EVENT_PAGE_CHANGED, { page, total });
   }
 
-  private emitMapping(mapping: any) {
-    const wm = require('../index').getWindowManager();
+  private emitMapping(mapping: Record<string, unknown>) {
+    const wm = getWindowManager();
     const win = wm?.getMainWindow();
     win?.webContents.send(IPC_CHANNELS.EVENT_FORM_PREVIEW, mapping);
   }
 
   private emitCaptchaDetected(type: string) {
-    const wm = require('../index').getWindowManager();
+    const wm = getWindowManager();
     const win = wm?.getMainWindow();
     win?.webContents.send(IPC_CHANNELS.EVENT_CAPTCHA_DETECTED, { type });
   }
 
   private emitOtpRequired(selector: string) {
-    const wm = require('../index').getWindowManager();
+    const wm = getWindowManager();
     const win = wm?.getMainWindow();
     win?.webContents.send(IPC_CHANNELS.EVENT_OTP_REQUIRED, { fieldSelector: selector });
   }
