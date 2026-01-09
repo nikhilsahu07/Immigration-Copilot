@@ -356,7 +356,20 @@ export function AutomationPage() {
           <p className="text-lg font-medium">Browser Preview</p>
           <p className="text-sm">
             {isRunning 
-              ? 'The portal is displayed in the embedded browser view' 
+              ? (
+                <div className="space-y-4">
+                  <p>The portal is displayed in the embedded browser view</p>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => stopAutomation()}
+                    className="gap-2"
+                  >
+                    <Square className="w-4 h-4" />
+                    Close Preview
+                  </Button>
+                </div>
+              )
               : 'Start automation to see the portal here'}
           </p>
         </div>

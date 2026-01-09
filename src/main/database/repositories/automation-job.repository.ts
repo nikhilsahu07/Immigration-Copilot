@@ -166,6 +166,22 @@ export class AutomationJobRepository {
 
     return counts;
   }
+  async update(id: string, companyId: string, input: Partial<AutomationJob>): Promise<AutomationJob | null> {
+    const updateData = { ...input, updatedAt: new Date() };
+    // Remove _id if present to avoid Mongo error
+    delete (updateData as any)._id;
+
+    const result = await this.collection.findOneAndUpdate(
+      { _id: new ObjectId(id), companyId } as Filter<AutomationJob>,
+      { $set: updateData } as UpdateFilter<AutomationJob>,
+      { returnDocument: 'after' }
+    );
+
+    if (result) {
+      return { ...result, _id: result._id.toString() } as AutomationJob;
+    }
+    return null;
+  }
 }
 
 export const automationJobRepository = new AutomationJobRepository();

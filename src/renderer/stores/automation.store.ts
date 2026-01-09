@@ -87,6 +87,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
   stopAutomation: async () => {
     try {
       await api.automation.stop();
+      await api.browserView.hide();
       set({ ...initialState, statusMessage: 'Automation stopped' });
     } catch (error) {
       set({ error: 'Failed to stop automation' });

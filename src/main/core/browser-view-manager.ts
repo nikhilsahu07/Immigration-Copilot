@@ -91,10 +91,13 @@ export class BrowserViewManager {
     const contentBounds = this.mainWindow.getContentBounds();
 
     // Calculate browser view bounds (right side of the window)
+    // IMPORTANT: use contentBounds.width since x is relative to content area
+    const width = Math.max(0, contentBounds.width - this.leftPanelWidth);
+    
     this.browserView.setBounds({
       x: this.leftPanelWidth,
       y: 0,
-      width: contentBounds.width - this.leftPanelWidth,
+      width: width,
       height: contentBounds.height,
     });
   }

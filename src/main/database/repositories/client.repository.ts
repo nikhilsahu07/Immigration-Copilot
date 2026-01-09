@@ -81,16 +81,21 @@ export class ClientRepository {
     
     const matchStage: Record<string, unknown> = { companyId };
     
+    if (search) {
+      matchStage.$text = { $search: search };
+    }
+
     if (status) {
       matchStage.status = status;
     }
 
     const pipeline = [
       { $match: matchStage },
+      { $addFields: { clientIdStr: { $toString: '$_id' } } },
       {
         $lookup: {
           from: COLLECTIONS.DOCUMENTS,
-          localField: '_id',
+          localField: 'clientIdStr',
           foreignField: 'clientId',
           as: 'documents'
         }
@@ -98,7 +103,7 @@ export class ClientRepository {
       {
         $lookup: {
           from: COLLECTIONS.EXTRACTIONS,
-          localField: '_id',
+          localField: 'clientIdStr',
           foreignField: 'clientId',
           as: 'extractions'
         }
