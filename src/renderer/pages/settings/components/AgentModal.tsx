@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, Button, Input, Label } from '../../../../components/ui';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, Button, Input, Label } from '../../../components/ui';
 import type { AgentPublic, CreateAgentInput, UpdateAgentInput } from '../../../../shared/types';
 import { Loader2 } from 'lucide-react';
 
