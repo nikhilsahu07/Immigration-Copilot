@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Pause, Square, AlertTriangle, KeyRound, CheckCircle, Loader2, Globe, MessageSquare, FileText, Bot, Sparkles, ArrowRight, XCircle } from 'lucide-react';
+import { Play, Pause, Square, AlertTriangle, KeyRound, CheckCircle, Loader2, Globe, MessageSquare, FileText, Bot, Sparkles, ArrowRight, XCircle, Search, PlusCircle } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label, Progress, Textarea } from '../../components/ui';
 import { useAutomationStore, useClientStore, usePortalStore } from '../../stores';
 import { api, ChatMessage } from '../../lib/api';
@@ -40,6 +40,7 @@ export function AutomationPage() {
   const [browserViewShown, setBrowserViewShown] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
 
   useEffect(() => {
     fetchClients();
@@ -184,6 +185,9 @@ export function AutomationPage() {
               </Button>
             )}
           </div>
+
+
+
         </div>
 
         {/* Configuration */}
@@ -301,6 +305,16 @@ export function AutomationPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                <div className="relative mb-3">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="search"
+                    placeholder="Search chat history..."
+                    className="pl-9 h-9 text-sm"
+                    value={chatSearchQuery}
+                    onChange={(e) => setChatSearchQuery(e.target.value)}
+                  />
+                </div>
                 {loadingChats ? (
                   <div className="flex items-center justify-center py-4">
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -310,23 +324,44 @@ export function AutomationPage() {
                     No chat history yet. AI instructions will be saved here.
                   </p>
                 ) : (
+
                   <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {chatMessages.map((msg) => (
+                    {chatMessages
+                      .filter(msg => msg.content.toLowerCase().includes(chatSearchQuery.toLowerCase()))
+                      .map((msg) => (
                       <div 
                         key={msg._id} 
-                        className={`p-2 rounded text-sm cursor-pointer hover:bg-muted/80 transition-colors ${
-                          msg.role === 'user' ? 'bg-primary/10 ml-4' : 
-                          msg.role === 'ai' ? 'bg-muted mr-4' : 'text-center italic text-muted-foreground'
+                        className={`group p-2 rounded text-sm relative transition-colors ${
+                          msg.role === 'user' ? 'bg-primary/10 ml-4 hover:bg-primary/15' : 
+                          msg.role === 'ai' ? 'bg-muted mr-4 hover:bg-muted/80' : 'text-center italic text-muted-foreground'
                         }`}
-                        onClick={() => msg.role === 'user' && handleChatClick(msg.content)}
-                        title={msg.role === 'user' ? "Click to use this prompt" : ""}
                       >
-                        <p className="font-medium text-xs mb-1 opacity-70">
-                          {msg.role === 'user' ? 'You' : msg.role === 'ai' ? 'Immigration Copilot' : 'System'}
-                        </p>
-                        {msg.content}
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="flex-1">
+                            <p className="font-medium text-xs mb-1 opacity-70">
+                              {msg.role === 'user' ? 'You' : msg.role === 'ai' ? 'Immigration Copilot' : 'System'}
+                            </p>
+                            {msg.content}
+                          </div>
+                          
+                          {/* Add to Prompt Icon - Only for user messages */}
+                          {msg.role === 'user' && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => handleChatClick(msg.content)}
+                              title="Add to prompt"
+                            >
+                              <PlusCircle className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     ))}
+                    {chatMessages.length > 0 && chatMessages.filter(msg => msg.content.toLowerCase().includes(chatSearchQuery.toLowerCase())).length === 0 && (
+                      <p className="text-center text-xs text-muted-foreground py-2">No matching messages found</p>
+                    )}
                   </div>
                 )}
               </CardContent>
