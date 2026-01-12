@@ -6,7 +6,13 @@ import { registerAllHandlers } from './ipc';
 import { logger } from './core/logger';
 import { loadEnvironment } from './config/environment';
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import icon from '../../resources/icon.png?asset';
+
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
 import squirrelStartup from 'electron-squirrel-startup';
 if (squirrelStartup) {
   app.quit();
@@ -59,8 +65,8 @@ async function initialize(): Promise<void> {
     }
 
     logger.info('Application initialized successfully');
-  } catch (error) {
-    logger.error('Failed to initialize application:', error);
+  } catch (error: any) {
+    logger.error('Failed to initialize app', error);
     // Show error dialog instead of crashing silently
     const { dialog } = require('electron');
     dialog.showErrorBox(

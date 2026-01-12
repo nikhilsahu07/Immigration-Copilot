@@ -3,7 +3,7 @@ import { BaseFiller, AutomatedField } from './base-filler';
 import { logger } from '../../core/logger';
 import path from 'path';
 import fs from 'fs';
-import { app } from 'electron';
+// import { app } from 'electron'; // Not available in all contexts, safer to use relative path
 import { getPresignedUrl } from '../../storage/s3-client';
 
 export class FileUploadFiller extends BaseFiller {
@@ -28,14 +28,21 @@ export class FileUploadFiller extends BaseFiller {
              // We need to await the result which is { url, expiresAt }
              const res = await getPresignedUrl(fileKeyOrUrl);
              signedUrl = res.url;
-          } catch (e) {
+          } catch {
              logger.warn(`Failed to get presigned URL for key ${fileKeyOrUrl}, trying as direct URL`);
           }
       }
 
-      const tempDir = app.getPath('temp');
+
+
+      // Use resources/temp instead of system temp to avoid permissions/timeout issues
+      const resourcesPath = path.join(process.cwd(), 'resources', 'temp');
+      if (!fs.existsSync(resourcesPath)) {
+        fs.mkdirSync(resourcesPath, { recursive: true });
+      }
+      
       const fileName = path.basename(fileKeyOrUrl.split('?')[0]) || 'upload.pdf';
-      const localPath = path.join(tempDir, fileName);
+      const localPath = path.join(resourcesPath, fileName);
 
       // Download
       const response = await fetch(signedUrl);

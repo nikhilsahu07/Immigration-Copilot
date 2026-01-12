@@ -8,14 +8,14 @@ export class DocumentRepository {
     return getDatabase().collection(COLLECTIONS.DOCUMENTS);
   }
 
-  async create(companyId: string, agentId: string, input: CreateDocumentInput & { s3Key: string; s3Url: string }): Promise<Document> {
+  async create(companyId: string, agentId: string, input: CreateDocumentInput & { s3Key: string; s3Url: string; customName?: string }): Promise<Document> {
     const now = new Date();
     const document: Omit<Document, '_id'> = {
       companyId,
       uploadedBy: agentId,
       clientId: input.clientId,
       filename: input.filename,
-      originalName: input.originalName,
+      originalName: input.customName || input.originalName,
       s3Key: input.s3Key,
       s3Url: input.s3Url,
       fileType: input.fileType,

@@ -28,7 +28,9 @@ export function ClientDetailPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
   const [documentType, setDocumentType] = useState('passport');
+  const [customName, setCustomName] = useState('');
   const [previewDocument, setPreviewDocument] = useState<DocumentWithPresignedUrl | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -104,8 +106,10 @@ export function ClientDetailPage() {
         clientId: id,
         documentType: documentType as 'passport' | 'education' | 'employment' | 'financial' | 'identity' | 'other',
         fileData: base64Content,
+        fileData: base64Content,
         fileName: selectedFile.name,
         mimeType: selectedFile.type,
+        customName: customName.trim() || undefined,
       });
 
       if (result.success && result.data) {
@@ -113,10 +117,12 @@ export function ClientDetailPage() {
         setShowUploadModal(false);
         setSelectedFile(null);
         setDocumentType('passport');
+        setCustomName('');
       } else {
         setUploadError(result.error || 'Failed to upload document');
       }
     } catch (err) {
+      console.error('Upload failed', err);
       setUploadError('An unexpected error occurred');
     } finally {
       setIsUploading(false);
@@ -439,6 +445,14 @@ export function ClientDetailPage() {
                   <option value="identity">Identity Document</option>
                   <option value="other">Other</option>
                 </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Document Name (Optional)</Label>
+                <Input
+                  placeholder="E.g., Passport Front Page"
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label>File</Label>

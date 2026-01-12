@@ -1,6 +1,6 @@
 
-import { Page, ElementHandle } from 'playwright-core';
-import { logger } from '../../core/logger';
+import { Page } from 'playwright-core';
+// import { logger } from '../../core/logger'; // Unused
 
 export interface AutomatedField {
     fieldIndex: number;
@@ -14,7 +14,8 @@ export interface AutomatedField {
 }
 
 export abstract class BaseFiller {
-  constructor(protected page: Page) {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  constructor(protected page: Page, protected options: any = {}) {}
 
   abstract fill(field: AutomatedField): Promise<boolean>;
 
@@ -24,15 +25,15 @@ export abstract class BaseFiller {
       if (element) {
         await element.scrollIntoViewIfNeeded();
       }
-    } catch (error) {
+    } catch {
        // Ignore scroll errors
     }
   }
 
-  protected async findElement(selector: string): Promise<ElementHandle | null> {
+  protected async findElement(selector: string) {
     try {
       return await this.page.$(selector);
-    } catch (e) {
+    } catch {
       return null;
     }
   }

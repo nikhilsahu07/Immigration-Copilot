@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Pause, Square, AlertTriangle, KeyRound, CheckCircle, Loader2, Globe, MessageSquare, FileText, Bot, Sparkles, ArrowRight } from 'lucide-react';
+import { Play, Pause, Square, AlertTriangle, KeyRound, CheckCircle, Loader2, Globe, MessageSquare, FileText, Bot, Sparkles, ArrowRight, XCircle } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label, Progress, Textarea } from '../../components/ui';
 import { useAutomationStore, useClientStore, usePortalStore } from '../../stores';
 import { api, ChatMessage } from '../../lib/api';
@@ -130,8 +130,24 @@ export function AutomationPage() {
   };
 
   const handleStop = async () => {
-    await stopAutomation();
-    // NOTE: Don't reset selectedPortal or browserViewShown - keep browser open for manual use
+    try {
+      if (isRunning) {
+        await stopAutomation(); // Use the store's stopAutomation
+      } else {
+        // If not running but browser is open (manual mode or finished)
+        await api.browserView.hide();
+        await api.browserView.close();
+      }
+      // setIsRunning(false); // This state is managed by the store's stopAutomation
+      setBrowserViewShown(false);
+      // Don't clear selected portal to persist selection
+    } catch (err) {
+      console.error('Failed to stop automation:', err);
+    }
+  };
+
+  const handleChatClick = (content: string) => {
+    setCustomPrompt(content);
   };
 
   // Get status icon based on message
@@ -158,9 +174,16 @@ export function AutomationPage() {
     <div className="split-view">
       {/* Left Panel - Controls */}
       <div className="split-view-left p-6 space-y-6">
-        <div>
-          <h1 className="text-xl font-semibold">Automation</h1>
-          <p className="text-sm text-muted-foreground">AI-powered form filling</p>
+        <div className="page-header">
+          <h1 className="page-title">Automation</h1>
+          <div className="flex gap-2">
+            {browserViewShown && !isRunning && (
+              <Button variant="outline" onClick={handleStop} className="gap-2">
+                <XCircle className="w-4 h-4" />
+                Exit Browser
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Configuration */}
@@ -291,17 +314,17 @@ export function AutomationPage() {
                     {chatMessages.map((msg) => (
                       <div 
                         key={msg._id} 
-                        className={`text-sm p-2 rounded ${
-                          msg.role === 'user' ? 'bg-blue-50 text-blue-900' : 
-                          msg.role === 'ai' ? 'bg-purple-50 text-purple-900' : 
-                          'bg-muted'
+                        className={`p-2 rounded text-sm cursor-pointer hover:bg-muted/80 transition-colors ${
+                          msg.role === 'user' ? 'bg-primary/10 ml-4' : 
+                          msg.role === 'ai' ? 'bg-muted mr-4' : 'text-center italic text-muted-foreground'
                         }`}
+                        onClick={() => msg.role === 'user' && handleChatClick(msg.content)}
+                        title={msg.role === 'user' ? "Click to use this prompt" : ""}
                       >
-                        <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                          <span className="font-medium capitalize">{msg.role}</span>
-                          <span>{new Date(msg.createdAt).toLocaleDateString()}</span>
-                        </div>
-                        <p className="line-clamp-2">{msg.content}</p>
+                        <p className="font-medium text-xs mb-1 opacity-70">
+                          {msg.role === 'user' ? 'You' : msg.role === 'ai' ? 'Immigration Copilot' : 'System'}
+                        </p>
+                        {msg.content}
                       </div>
                     ))}
                   </div>

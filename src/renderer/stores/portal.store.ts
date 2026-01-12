@@ -33,7 +33,7 @@ export const usePortalStore = create<PortalState>((set, get) => ({
       } else {
         set({ error: result.error || 'Failed to fetch portals', isLoading: false });
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
     }
   },
@@ -49,7 +49,7 @@ export const usePortalStore = create<PortalState>((set, get) => ({
         set({ error: result.error || 'Failed to get portal', isLoading: false });
         return null;
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
       return null;
     }
@@ -68,7 +68,7 @@ export const usePortalStore = create<PortalState>((set, get) => ({
         set({ error: result.error || 'Failed to create portal', isLoading: false });
         return null;
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
       return null;
     }
@@ -95,7 +95,7 @@ export const usePortalStore = create<PortalState>((set, get) => ({
         set({ error: result.error || 'Failed to update portal', isLoading: false });
         return null;
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
       return null;
     }
@@ -120,7 +120,7 @@ export const usePortalStore = create<PortalState>((set, get) => ({
         set({ error: result.error || 'Failed to delete portal', isLoading: false });
         return false;
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
       return false;
     }

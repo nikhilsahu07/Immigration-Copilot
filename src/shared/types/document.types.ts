@@ -55,6 +55,7 @@ export interface UploadDocumentInput {
   fileData?: string;
   fileName?: string;
   mimeType?: string;
+  customName?: string;
 }
 
 export interface DocumentUploadResult {

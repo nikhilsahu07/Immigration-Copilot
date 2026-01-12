@@ -50,6 +50,7 @@ export class AIService {
 
   async analyzePageAndMapFields(
     html: string, 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     extractedData: any,
     documentList: { name: string; category: string }[],
     customPrompt?: string

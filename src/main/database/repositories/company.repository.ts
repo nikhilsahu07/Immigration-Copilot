@@ -1,4 +1,4 @@
-import { Collection, ObjectId, Filter, UpdateFilter, FindOptions } from 'mongodb';
+import { Collection, ObjectId, Filter, UpdateFilter } from 'mongodb';
 import { getDatabase, COLLECTIONS } from '../index';
 import { Company, CreateCompanyInput, UpdateCompanyInput } from '../../../shared/types';
 import { logger } from '../../core/logger';
@@ -23,7 +23,7 @@ export class CompanyRepository {
   }
 
   async findById(id: string): Promise<Company | null> {
-    const company = await this.collection.findOne({ _id: new ObjectId(id) } as Filter<Company>);
+    const company = await this.collection.findOne({ _id: new ObjectId(id) } as any);
     if (company) {
       return { ...company, _id: company._id.toString() } as Company;
     }
@@ -58,7 +58,7 @@ export class CompanyRepository {
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.collection.deleteOne({ _id: new ObjectId(id) } as Filter<Company>);
+    const result = await this.collection.deleteOne({ _id: new ObjectId(id) } as any);
     if (result.deletedCount > 0) {
       logger.info(`Company deleted: ${id}`);
       return true;

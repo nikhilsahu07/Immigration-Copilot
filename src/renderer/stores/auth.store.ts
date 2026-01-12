@@ -21,7 +21,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       isAuthenticated: false,
       isLoading: false,
       agent: null,
@@ -46,7 +46,7 @@ export const useAuthStore = create<AuthState>()(
             set({ error: result.error || 'Login failed', isLoading: false });
             return false;
           }
-        } catch (error) {
+        } catch {
           set({ error: 'An unexpected error occurred', isLoading: false });
           return false;
         }
@@ -69,7 +69,7 @@ export const useAuthStore = create<AuthState>()(
             set({ error: result.error || 'Registration failed', isLoading: false });
             return false;
           }
-        } catch (error) {
+        } catch {
           set({ error: 'An unexpected error occurred', isLoading: false });
           return false;
         }

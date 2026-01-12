@@ -35,7 +35,7 @@ export class AutomationJobRepository {
   async findById(id: string): Promise<AutomationJob | null> {
     const job = await this.collection.findOne({ 
       _id: new ObjectId(id)
-    } as Filter<AutomationJob>);
+    } as any);
 
     if (job) {
       return { ...job, _id: job._id.toString() } as AutomationJob;
@@ -69,7 +69,7 @@ export class AutomationJobRepository {
     const job = await this.collection.findOne({ 
       companyId,
       status: { $in: ['running', 'paused'] }
-    } as Filter<AutomationJob>);
+    } as any);
 
     if (job) {
       return { ...job, _id: job._id.toString() } as AutomationJob;
@@ -102,7 +102,7 @@ export class AutomationJobRepository {
     }
 
     const result = await this.collection.findOneAndUpdate(
-      { _id: new ObjectId(id) } as Filter<AutomationJob>,
+      { _id: new ObjectId(id) } as any,
       { $set: updateData } as UpdateFilter<AutomationJob>,
       { returnDocument: 'after' }
     );
@@ -116,7 +116,7 @@ export class AutomationJobRepository {
 
   async addPageProcessed(id: string, page: PageProcessed): Promise<void> {
     await this.collection.updateOne(
-      { _id: new ObjectId(id) } as Filter<AutomationJob>,
+      { _id: new ObjectId(id) } as any,
       { 
         $push: { pagesProcessed: page },
         $inc: { currentPage: 1, fieldsFilledCount: page.fieldsCount },
@@ -127,14 +127,14 @@ export class AutomationJobRepository {
 
   async setTotalPages(id: string, totalPages: number): Promise<void> {
     await this.collection.updateOne(
-      { _id: new ObjectId(id) } as Filter<AutomationJob>,
+      { _id: new ObjectId(id) } as any,
       { $set: { totalPages, updatedAt: new Date() } } as UpdateFilter<AutomationJob>
     );
   }
 
   async setError(id: string, errorLog: string): Promise<void> {
     await this.collection.updateOne(
-      { _id: new ObjectId(id) } as Filter<AutomationJob>,
+      { _id: new ObjectId(id) } as any,
       { 
         $set: { 
           status: 'failed' as JobStatus,
@@ -169,10 +169,11 @@ export class AutomationJobRepository {
   async update(id: string, companyId: string, input: Partial<AutomationJob>): Promise<AutomationJob | null> {
     const updateData = { ...input, updatedAt: new Date() };
     // Remove _id if present to avoid Mongo error
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (updateData as any)._id;
 
     const result = await this.collection.findOneAndUpdate(
-      { _id: new ObjectId(id), companyId } as Filter<AutomationJob>,
+      { _id: new ObjectId(id), companyId } as any,
       { $set: updateData } as UpdateFilter<AutomationJob>,
       { returnDocument: 'after' }
     );

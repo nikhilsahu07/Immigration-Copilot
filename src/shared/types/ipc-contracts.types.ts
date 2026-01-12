@@ -1,10 +1,10 @@
 // IPC Contract Types - Request/Response types for Electron IPC
 
-import { Company, CreateCompanyInput, UpdateCompanyInput } from './company.types';
-import { Agent, AgentPublic, CreateAgentInput, UpdateAgentInput, LoginInput, RegisterInput, LoginResponse } from './agent.types';
+import { Company, UpdateCompanyInput } from './company.types';
+import { AgentPublic, CreateAgentInput, LoginInput, RegisterInput, LoginResponse, UpdateAgentInput } from './agent.types';
 import { Client, CreateClientInput, UpdateClientInput, ClientWithDocumentCount } from './client.types';
-import { Document, UploadDocumentInput, DocumentWithPresignedUrl } from './document.types';
-import { Extraction, CreateExtractionInput, UpdateExtractionInput, ApproveExtractionInput, RejectExtractionInput } from './extraction.types';
+import { UploadDocumentInput, DocumentWithPresignedUrl } from './document.types';
+import { Extraction, CreateExtractionInput, ApproveExtractionInput, RejectExtractionInput } from './extraction.types';
 import { Portal, CreatePortalInput, UpdatePortalInput } from './portal.types';
 import { AutomationJob, CreateJobInput, FormMapping, AutomationState } from './automation.types';
 import { Result, PaginatedResult, PaginationParams } from './common.types';

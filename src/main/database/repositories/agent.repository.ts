@@ -33,7 +33,7 @@ export class AgentRepository {
   }
 
   async findById(id: string): Promise<Agent | null> {
-    const agent = await this.collection.findOne({ _id: new ObjectId(id) } as Filter<Agent>);
+    const agent = await this.collection.findOne({ _id: new ObjectId(id) } as any);
     if (agent) {
       return { ...agent, _id: agent._id.toString() } as Agent;
     }
@@ -91,7 +91,7 @@ export class AgentRepository {
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.collection.deleteOne({ _id: new ObjectId(id) } as Filter<Agent>);
+    const result = await this.collection.deleteOne({ _id: new ObjectId(id) } as any);
     if (result.deletedCount > 0) {
       logger.info(`Agent deleted: ${id}`);
       return true;

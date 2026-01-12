@@ -73,7 +73,7 @@ export class SelectFiller extends BaseFiller {
 
       // 4. Last resort: force set value
       try {
-        await this.page.evaluate(({selector, value}) => {
+        await this.page.evaluate(({selector, value: _value}) => {
           const el = document.querySelector(selector) as HTMLSelectElement;
           if (el && el.options.length > 1) {
             // Select the first non-empty option if value doesn't match

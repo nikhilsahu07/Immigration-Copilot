@@ -1,5 +1,5 @@
 import { BrowserWindow, app, session } from 'electron';
-import path from 'path';
+
 import { logger } from './logger';
 
 export class WindowManager {

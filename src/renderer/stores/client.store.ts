@@ -69,7 +69,7 @@ export const useClientStore = create<ClientState>((set, get) => ({
       } else {
         set({ error: result.error || 'Failed to fetch clients', isLoading: false });
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
     }
   },
@@ -85,7 +85,7 @@ export const useClientStore = create<ClientState>((set, get) => ({
         set({ error: result.error || 'Failed to get client', isLoading: false });
         return null;
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
       return null;
     }
@@ -104,7 +104,7 @@ export const useClientStore = create<ClientState>((set, get) => ({
         set({ error: result.error || 'Failed to create client', isLoading: false });
         return null;
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
       return null;
     }
@@ -131,7 +131,7 @@ export const useClientStore = create<ClientState>((set, get) => ({
         set({ error: result.error || 'Failed to update client', isLoading: false });
         return null;
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
       return null;
     }
@@ -156,7 +156,7 @@ export const useClientStore = create<ClientState>((set, get) => ({
         set({ error: result.error || 'Failed to delete client', isLoading: false });
         return false;
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
       return false;
     }

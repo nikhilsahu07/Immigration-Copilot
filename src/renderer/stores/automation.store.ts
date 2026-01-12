@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api } from '../lib/api';
-import type { AutomationState, FormMapping, AutomationJob, CreateJobInput, CaptchaDetection } from '../../shared/types';
+import type { FormMapping, AutomationJob, CreateJobInput } from '../../shared/types';
 
 interface AutomationStoreState {
   // State
@@ -79,7 +79,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
         set({ error: result.error || 'Failed to start automation', isLoading: false });
         return false;
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
       return false;
     }
@@ -90,7 +90,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
       await api.automation.stop();
       // NOTE: Don't hide browser view on stop - keep it open for manual use
       set({ isRunning: false, isPaused: false, currentJob: null, statusMessage: 'Automation stopped' });
-    } catch (error) {
+    } catch {
       set({ error: 'Failed to stop automation' });
     }
   },
@@ -99,7 +99,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
     try {
       await api.automation.pause();
       set({ isPaused: true, statusMessage: 'Paused' });
-    } catch (error) {
+    } catch {
       set({ error: 'Failed to pause automation' });
     }
   },
@@ -108,7 +108,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
     try {
       await api.automation.resume();
       set({ isPaused: false, statusMessage: 'Resuming...' });
-    } catch (error) {
+    } catch {
       set({ error: 'Failed to resume automation' });
     }
   },
@@ -124,7 +124,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
         set({ error: result.error || 'Failed to approve', isLoading: false });
         return false;
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
       return false;
     }
@@ -141,7 +141,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
         set({ error: result.error || 'Failed to reject', isLoading: false });
         return false;
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
       return false;
     }
@@ -158,7 +158,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
         set({ error: result.error || 'Failed to submit form', isLoading: false });
         return false;
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
       return false;
     }
@@ -175,7 +175,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
         set({ error: result.error || 'Failed to submit OTP', isLoading: false });
         return false;
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
       return false;
     }
@@ -192,7 +192,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
         set({ error: result.error || 'Failed to resume', isLoading: false });
         return false;
       }
-    } catch (error) {
+    } catch {
       set({ error: 'An unexpected error occurred', isLoading: false });
       return false;
     }
@@ -201,7 +201,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
   loadUrl: async (url) => {
     try {
       await api.browserView.load({ url });
-    } catch (error) {
+    } catch {
       set({ error: 'Failed to load URL' });
     }
   },
@@ -209,7 +209,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
   hidePreview: async () => {
     try {
       await api.browserView.hide();
-    } catch (error) {
+    } catch {
       // Ignore
     }
   },
@@ -217,7 +217,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
   closeBrowser: async () => {
     try {
       await api.browserView.close();
-    } catch (error) {
+    } catch {
       // Ignore
     }
   },

@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 import { companyRepository, agentRepository, auditLogRepository } from '../../database/repositories';
 import { RegisterInput, LoginInput, LoginResponse, AuthSession } from '../../../shared/types';
-import { createError, success, failure } from '../../core/error-handler';
+import { createError } from '../../core/error-handler';
 import { ERROR_CODES } from '../../../shared/constants';
 import { logger } from '../../core/logger';
 import { getEnv } from '../../config';
