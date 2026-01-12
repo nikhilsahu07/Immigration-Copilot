@@ -1,7 +1,8 @@
 import React from 'react';
 import { Building, User, Key, Bell } from 'lucide-react';
 import { useAuthStore } from '../../stores';
-import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label, Separator } from '../../components/ui';
+import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label } from '../../components/ui';
+import { AgentsList } from './components/AgentsList';
 
 export function SettingsPage() {
   const { agent, company } = useAuthStore();
@@ -76,6 +77,9 @@ export function SettingsPage() {
             <Button variant="outline">Edit Profile</Button>
           </CardContent>
         </Card>
+
+        {/* Team Management (Admin Only) */}
+        {agent?.role === 'admin' && <AgentsList />}
 
         {/* Security Settings */}
         <Card>

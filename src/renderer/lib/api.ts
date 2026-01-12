@@ -23,6 +23,11 @@ import type {
   CreateJobInput,
   FormMapping,
   AutomationState,
+  FormMapping,
+  AutomationState,
+  AgentPublic,
+  CreateAgentInput,
+  UpdateAgentInput,
 } from '../../shared/types';
 
 export interface DashboardStats {
@@ -67,6 +72,13 @@ export interface ElectronAPI {
   company: {
     get: (data: { id: string }) => Promise<Result<unknown>>;
     update: (data: { id: string; data: unknown }) => Promise<Result<unknown>>;
+  };
+  agent: {
+    list: (params: PaginationParams) => Promise<Result<PaginatedResult<AgentPublic>>>;
+    get: (data: { id: string }) => Promise<Result<AgentPublic>>;
+    create: (data: CreateAgentInput) => Promise<Result<AgentPublic>>;
+    update: (data: { id: string; data: UpdateAgentInput }) => Promise<Result<AgentPublic>>;
+    delete: (data: { id: string }) => Promise<Result<void>>;
   };
   client: {
     list: (params: PaginationParams & { search?: string; status?: string }) => Promise<Result<PaginatedResult<ClientWithDocumentCount>>>;

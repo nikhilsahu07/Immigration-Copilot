@@ -7,3 +7,21 @@ export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent }
 export { Progress } from './progress';
 export { Separator } from './separator';
 export { ScrollArea, ScrollBar } from './scroll-area';
+export {
+  Dialog,
+  DialogPortal,
+  DialogOverlay,
+  DialogClose,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from './dialog';
+export {
+  Alert,
+  AlertTitle,
+  AlertDescription,
+} from './alert';
+
