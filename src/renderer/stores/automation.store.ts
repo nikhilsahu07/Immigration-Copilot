@@ -30,6 +30,7 @@ interface AutomationStoreState {
   resumeAfterCaptcha: () => Promise<boolean>;
   loadUrl: (url: string) => Promise<void>;
   hidePreview: () => Promise<void>;
+  closeBrowser: () => Promise<void>;
   
   // Internal
   setStatus: (message: string, progress: number) => void;
@@ -87,8 +88,8 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
   stopAutomation: async () => {
     try {
       await api.automation.stop();
-      await api.browserView.hide();
-      set({ ...initialState, statusMessage: 'Automation stopped' });
+      // NOTE: Don't hide browser view on stop - keep it open for manual use
+      set({ isRunning: false, isPaused: false, currentJob: null, statusMessage: 'Automation stopped' });
     } catch (error) {
       set({ error: 'Failed to stop automation' });
     }
@@ -208,6 +209,14 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
   hidePreview: async () => {
     try {
       await api.browserView.hide();
+    } catch (error) {
+      // Ignore
+    }
+  },
+
+  closeBrowser: async () => {
+    try {
+      await api.browserView.close();
     } catch (error) {
       // Ignore
     }

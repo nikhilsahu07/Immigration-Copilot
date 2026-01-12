@@ -40,6 +40,19 @@ export interface ActivityItem {
   createdAt: Date;
 }
 
+export interface ChatMessage {
+  _id: string;
+  companyId: string;
+  agentId: string;
+  clientId: string;
+  jobId?: string;
+  role: 'user' | 'ai' | 'system';
+  content: string;
+  pageUrl?: string;
+  pageNumber?: number;
+  createdAt: Date;
+}
+
 export interface ElectronAPI {
   dashboard: {
     getStats: () => Promise<Result<DashboardStats>>;
@@ -84,6 +97,10 @@ export interface ElectronAPI {
     update: (data: { id: string; data: UpdatePortalInput }) => Promise<Result<Portal>>;
     delete: (data: { id: string }) => Promise<Result<void>>;
   };
+  chat: {
+    list: (data: { clientId: string }) => Promise<Result<ChatMessage[]>>;
+    create: (data: { clientId: string; content: string; role: string; jobId?: string }) => Promise<Result<ChatMessage>>;
+  };
   automation: {
     start: (data: CreateJobInput) => Promise<Result<AutomationJob>>;
     stop: () => Promise<Result<void>>;
@@ -94,6 +111,7 @@ export interface ElectronAPI {
     submitForm: () => Promise<Result<void>>;
     submitOtp: (data: { otp: string }) => Promise<Result<void>>;
     resumeAfterCaptcha: () => Promise<Result<void>>;
+    executeAction: (data: { actionIndex: number }) => Promise<Result<void>>;
     getState: () => Promise<Result<AutomationState>>;
     getHistory: (params: PaginationParams) => Promise<Result<PaginatedResult<AutomationJob>>>;
   };
@@ -102,6 +120,7 @@ export interface ElectronAPI {
     show: () => Promise<Result<void>>;
     hide: () => Promise<Result<void>>;
     resize: (data: { width: number }) => Promise<Result<void>>;
+    close: () => Promise<Result<void>>;
   };
   events: {
     onStatusUpdate: (callback: (data: { message: string; progress: number }) => void) => () => void;

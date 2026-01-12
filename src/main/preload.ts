@@ -85,7 +85,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     delete: createInvoker(IPC_CHANNELS.PORTAL_DELETE),
   },
 
-  // Automation
+  // Chat
+  chat: {
+    list: createInvoker(IPC_CHANNELS.CHAT_LIST),
+    create: createInvoker(IPC_CHANNELS.CHAT_CREATE),
+  },
   automation: {
     start: createInvoker(IPC_CHANNELS.AUTOMATION_START),
     stop: createInvoker(IPC_CHANNELS.AUTOMATION_STOP),
@@ -96,6 +100,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     submitForm: createInvoker(IPC_CHANNELS.AUTOMATION_SUBMIT_FORM),
     submitOtp: createInvoker(IPC_CHANNELS.AUTOMATION_SUBMIT_OTP),
     resumeAfterCaptcha: createInvoker(IPC_CHANNELS.AUTOMATION_RESUME_AFTER_CAPTCHA),
+    executeAction: createInvoker(IPC_CHANNELS.AUTOMATION_EXECUTE_ACTION),
     getState: createInvoker(IPC_CHANNELS.AUTOMATION_GET_STATE),
     getHistory: createInvoker(IPC_CHANNELS.AUTOMATION_GET_HISTORY),
   },
@@ -106,6 +111,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     show: createInvoker(IPC_CHANNELS.BROWSER_VIEW_SHOW),
     hide: createInvoker(IPC_CHANNELS.BROWSER_VIEW_HIDE),
     resize: createInvoker(IPC_CHANNELS.BROWSER_VIEW_RESIZE),
+    close: createInvoker(IPC_CHANNELS.BROWSER_CLOSE),
   },
 
   // Event listeners

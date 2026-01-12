@@ -105,6 +105,14 @@ async function createIndexes(db: Db): Promise<void> {
       { key: { createdAt: -1 } },
     ]);
 
+    // Chats indexes
+    await db.collection('chats').createIndexes([
+      { key: { companyId: 1 } },
+      { key: { clientId: 1 } },
+      { key: { jobId: 1 } },
+      { key: { createdAt: -1 } },
+    ]);
+
     logger.info('Database indexes created successfully');
   } catch (error) {
     logger.error('Failed to create indexes:', error);
@@ -122,4 +130,5 @@ export const COLLECTIONS = {
   PORTALS: 'portals',
   AUTOMATION_JOBS: 'automation_jobs',
   AUDIT_LOGS: 'audit_logs',
+  CHATS: 'chats',
 } as const;

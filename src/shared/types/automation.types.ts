@@ -11,6 +11,7 @@ export type PauseReason =
   | 'captcha'
   | 'otp'
   | 'manual_intervention'
+  | 'manual_input'
   | 'error'
   | 'user_paused';
 
@@ -64,8 +65,16 @@ export type FieldType =
   | 'textarea'
   | 'file';
 
+export interface FormAction {
+  type: 'click' | 'submit' | 'wait';
+  selector: string;
+  expectedText: string;
+  description: string;
+}
+
 export interface FormMapping {
   fields: FormField[];
+  actions: FormAction[];
   captcha: {
     detected: boolean;
     type?: 'reCAPTCHA' | 'hCAPTCHA' | 'Cloudflare' | 'custom' | null;

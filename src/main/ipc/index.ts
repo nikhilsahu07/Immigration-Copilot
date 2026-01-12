@@ -7,6 +7,7 @@ import { registerPortalHandlers } from './handlers/portal.handlers';
 import { registerBrowserViewHandlers } from './handlers/browser-view.handlers';
 import { registerDashboardHandlers } from './handlers/dashboard.handlers';
 import { registerAutomationHandlers } from './handlers/automation.handlers';
+import { registerChatHandlers } from './handlers/chat.handlers';
 import { logger } from '../core/logger';
 
 export function registerAllHandlers(browserViewManager: BrowserViewManager): void {
@@ -20,7 +21,7 @@ export function registerAllHandlers(browserViewManager: BrowserViewManager): voi
   registerBrowserViewHandlers(browserViewManager);
   registerDashboardHandlers();
   registerAutomationHandlers();
+  registerChatHandlers();
 
   logger.info('All IPC handlers registered');
 }
-

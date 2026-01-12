@@ -12,7 +12,8 @@ import {
   clientRepository, 
   portalRepository, 
   extractionRepository,
-  documentRepository
+  documentRepository,
+  chatRepository
 } from '../database/repositories';
 import { logger } from '../core/logger';
 import { createError } from '../core/error-handler';
@@ -53,6 +54,21 @@ export class AutomationService {
     const job = await automationJobRepository.create(companyId, agentId, {
       ...input,
     });
+
+    // 2.5 Save custom prompt to chat history if present
+    if (input.customPrompt) {
+      try {
+        await chatRepository.create(companyId, agentId, {
+          clientId: input.clientId,
+          content: input.customPrompt,
+          role: 'user',
+          jobId: job._id.toString()
+        });
+      } catch (err) {
+        logger.error('Failed to save chat message', err);
+        // Don't fail automation if chat save fails
+      }
+    }
 
     this.currentJob = job;
     this.isRunning = true;
@@ -115,12 +131,16 @@ export class AutomationService {
       const cleaned = await pageManager.extractHtml();
       this.emitStatus('Page structure ready', 20);
 
-      // 2. Fetch documents for context
+      // 2. Fetch documents for context (include s3Key for file uploads)
       const documents = await documentRepository.findByClient(client._id, this.currentJob?.companyId || '');
       const documentList = documents.map(d => ({ 
         name: d.originalName, 
-        category: d.documentType 
+        category: d.documentType,
+        s3Key: d.s3Key,
       }));
+
+      // Create lookup map for resolving document names to S3 keys
+      const documentLookup = new Map(documents.map(d => [d.originalName, d.s3Key]));
 
       // 3. AI Analysis with page type classification
       this.emitStatus('Processing with AI...', 30);
@@ -138,13 +158,77 @@ export class AutomationService {
       if (aiResult.pageType === 'dashboard' || !aiResult.isFormPage) {
         await this.processDashboardPage(pageManager, aiResult, client, extraction, portalUrl, customPrompt);
       } else {
-        await this.processFormPage(pageManager, aiResult, client, extraction, portalUrl, customPrompt);
+        await this.processFormPage(pageManager, aiResult, client, extraction, portalUrl, customPrompt, documentLookup);
       }
 
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Page processing failed:', error);
-      this.emitStatus('Error processing page', 0);
+      
+      // Parse and emit user-friendly error
+      const errorMessage = this.parseGeminiError(error);
+      this.emitError(errorMessage);
+      this.emitStatus('Error: ' + errorMessage.title, 0);
     }
+  }
+
+  // Parse Gemini API errors into user-friendly messages
+  private parseGeminiError(error: any): { title: string; message: string; type: string; retryAfter?: number } {
+    const errorString = String(error.message || error);
+    
+    // Rate limit / quota exceeded
+    if (errorString.includes('429') || errorString.includes('quota') || errorString.includes('Too Many Requests')) {
+      const retryMatch = errorString.match(/retry.*?(\d+)/i);
+      const retryAfter = retryMatch ? parseInt(retryMatch[1]) : 60;
+      return {
+        title: 'API Rate Limit Exceeded',
+        message: `You have exceeded your Gemini API quota. Please wait ${retryAfter} seconds or upgrade your plan.`,
+        type: 'rate_limit',
+        retryAfter,
+      };
+    }
+    
+    // Token limit exceeded
+    if (errorString.includes('token') && (errorString.includes('limit') || errorString.includes('exceeded'))) {
+      return {
+        title: 'Token Limit Exceeded',
+        message: 'The page content is too large for the AI to process. Try simplifying the form or reducing content.',
+        type: 'token_limit',
+      };
+    }
+    
+    // Invalid API key
+    if (errorString.includes('401') || errorString.includes('API key') || errorString.includes('unauthorized')) {
+      return {
+        title: 'Invalid API Key',
+        message: 'Your Gemini API key is invalid or expired. Please check your configuration.',
+        type: 'auth_error',
+      };
+    }
+    
+    // Network error
+    if (errorString.includes('network') || errorString.includes('ECONNREFUSED') || errorString.includes('fetch')) {
+      return {
+        title: 'Network Error',
+        message: 'Could not connect to Gemini API. Please check your internet connection.',
+        type: 'network_error',
+      };
+    }
+    
+    // JSON parse error
+    if (errorString.includes('JSON') || errorString.includes('parse')) {
+      return {
+        title: 'Invalid AI Response',
+        message: 'The AI returned an invalid response. This page may be too complex. Try adding custom instructions.',
+        type: 'parse_error',
+      };
+    }
+    
+    // Generic error
+    return {
+      title: 'Processing Error',
+      message: errorString.substring(0, 200),
+      type: 'unknown',
+    };
   }
 
   // Handle dashboard/navigation pages - execute click actions
@@ -190,7 +274,8 @@ export class AutomationService {
     _client: Client,
     _extraction: Extraction,
     _portalUrl: string,
-    _customPrompt?: string
+    _customPrompt?: string,
+    documentLookup?: Map<string, string>
   ) {
     // Ensure fields is an array
     const fields = Array.isArray(aiResult.fields) ? aiResult.fields : [];
@@ -202,18 +287,43 @@ export class AutomationService {
 
     // Fill form
     this.emitStatus('Filling form...', 60);
-    const mappedFields: AutomatedField[] = fields.map((f: any, i: number) => ({
-      fieldIndex: i,
-      fieldName: (f.fieldName as string) || '',
-      fieldLabel: (f.fieldName as string) || '',
-      fieldType: (f.fieldType as string) || 'text',
-      selector: (f.selector as string) || '',
-      value: (f.value as string) || '',
-      confidence: 'high',
-      reasoning: (f.reason as string) || '',
-    }));
+    const mappedFields: AutomatedField[] = fields.map((f: any, i: number) => {
+      let value = (f.value as string) || '';
+      
+      // For file fields, resolve document name to S3 key
+      if (f.fieldType === 'file' && value && documentLookup) {
+        const s3Key = documentLookup.get(value);
+        if (s3Key) {
+          value = s3Key;
+          logger.info(`Resolved document "${f.value}" to S3 key: ${s3Key}`);
+        }
+      }
+      
+      return {
+        fieldIndex: i,
+        fieldName: (f.fieldName as string) || '',
+        fieldLabel: (f.fieldName as string) || '',
+        fieldType: (f.fieldType as string) || 'text',
+        selector: (f.selector as string) || '',
+        value,
+        confidence: 'high',
+        reasoning: (f.reason as string) || '',
+      };
+    });
 
+    // Check for empty fields before filling
+    const emptyFields = mappedFields.filter(f => !f.value || f.value.trim() === '' || f.value === 'N/A');
+    
     await pageManager.fillForm(mappedFields);
+    
+    // If there are empty fields, emit event for manual input
+    if (emptyFields.length > 0) {
+      this.emitStatus(`${emptyFields.length} field(s) need manual input`, 70);
+      this.emitManualInputRequired(emptyFields);
+      this.pause('manual_input');
+      return;
+    }
+    
     this.emitStatus('Form filled. Please review.', 80);
 
     // Handle Special States (Captcha/OTP) - AFTER filling
@@ -234,9 +344,17 @@ export class AutomationService {
       return;
     }
 
-    // Emit mapping for approval
+    // Emit mapping for approval with actions for UI buttons
+    const actions = Array.isArray(aiResult.actions) ? aiResult.actions.map((a: any) => ({
+      type: a.type || 'click',
+      selector: a.selector || '',
+      expectedText: a.expectedText || a.description || '',
+      description: a.description || a.expectedText || '',
+    })) : [];
+
     const mapping = {
       fields: mappedFields,
+      actions,
       captcha: { detected: false },
       otp: { detected: false },
       submitButton: { selector: 'button[type="submit"]', text: 'Submit' },
@@ -313,14 +431,12 @@ export class AutomationService {
     this.isPaused = false;
     this.currentMapping = null;
     
-    // Disconnect browser
-    await browserConnector.disconnect();
+    // NOTE: Do NOT disconnect browser on stop - keep it open for user to continue manually
+    // Browser will be closed via separate BROWSER_CLOSE IPC call from UI
+    // await browserConnector.disconnect();
     
-    // Hide browser view
-    const bvm = getBrowserViewManager();
-    if (bvm) {
-      bvm.hide();
-    }
+    // NOTE: Also keep browser view visible so user can see the portal
+    // Hide only when user explicitly closes browser
     
     this.emitStatus('Automation stopped', 0);
   }
@@ -369,6 +485,58 @@ export class AutomationService {
     await this.resume();
   }
 
+  async executeAction(actionIndex: number): Promise<void> {
+    if (!this.currentMapping || !this.currentMapping.actions) {
+      throw new Error('No actions available');
+    }
+
+    const action = this.currentMapping.actions[actionIndex];
+    if (!action) {
+      throw new Error(`Action at index ${actionIndex} not found`);
+    }
+
+    logger.info(`Executing action: ${action.expectedText || action.description}`);
+    this.emitStatus(`Executing: ${action.expectedText || action.description}`, 70);
+
+    try {
+      // Get Playwright page from the current portal
+      if (!this.currentJob) {
+        throw new Error('No current job');
+      }
+      const portal = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
+      if (!portal) {
+        throw new Error('Portal not found');
+      }
+      const portalDomain = new URL(portal.url).hostname;
+      const page = await browserConnector.getPageByUrl(portalDomain);
+      const pageManager = new PageManager(page);
+      
+      // Execute the action using pageManager
+      await pageManager.executeActions([action]);
+      
+      this.emitStatus('Action executed, processing next page...', 80);
+      
+      // Continue to next page
+      if (this.currentJob) {
+        const c = await clientRepository.findById(this.currentJob.clientId, this.currentJob.companyId);
+        const e = await extractionRepository.findById(this.currentJob.extractionId, this.currentJob.companyId);
+        const p = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
+
+        if (c && e && p) {
+          // Small delay for page navigation
+          setTimeout(() => {
+            this.currentMapping = null;
+            this.processPage(c, e, p.url);
+          }, 2000);
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to execute action:', error);
+      this.emitStatus('Action failed', 0);
+      throw error;
+    }
+  }
+
   async getState(): Promise<AutomationState> {
     return {
       isRunning: this.isRunning,
@@ -411,6 +579,28 @@ export class AutomationService {
     const wm = getWindowManager();
     const win = wm?.getMainWindow();
     win?.webContents.send(IPC_CHANNELS.EVENT_OTP_REQUIRED, { fieldSelector: selector });
+  }
+
+  private emitManualInputRequired(emptyFields: { fieldName: string; fieldLabel: string; selector: string }[]) {
+    const wm = getWindowManager();
+    const win = wm?.getMainWindow();
+    win?.webContents.send(IPC_CHANNELS.EVENT_MANUAL_INPUT_REQUIRED, { 
+      fields: emptyFields.map(f => ({
+        fieldName: f.fieldName,
+        fieldLabel: f.fieldLabel,
+        selector: f.selector,
+      })),
+      message: `${emptyFields.length} field(s) could not be filled automatically. Please fill them manually or provide additional instructions.`
+    });
+  }
+
+  private emitError(error: { title: string; message: string; type: string; retryAfter?: number }) {
+    const wm = getWindowManager();
+    const win = wm?.getMainWindow();
+    win?.webContents.send(IPC_CHANNELS.EVENT_ERROR, error);
+    
+    // Also pause the automation on error
+    this.pause('error');
   }
 }
 

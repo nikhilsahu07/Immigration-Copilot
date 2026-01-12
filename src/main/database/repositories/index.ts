@@ -7,3 +7,4 @@ export { extractionRepository } from './extraction.repository';
 export { portalRepository } from './portal.repository';
 export { automationJobRepository } from './automation-job.repository';
 export { auditLogRepository, type AuditLog, type AuditAction } from './audit-log.repository';
+export { chatRepository, type ChatMessage, type CreateChatInput } from './chat.repository';

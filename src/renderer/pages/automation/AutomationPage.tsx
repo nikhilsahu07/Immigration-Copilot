@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Play, Pause, Square, AlertTriangle, KeyRound, CheckCircle, Loader2, Globe, MessageSquare, FileText, Bot, Sparkles, ArrowRight } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label, Progress, Textarea } from '../../components/ui';
 import { useAutomationStore, useClientStore, usePortalStore } from '../../stores';
-import { api } from '../../lib/api';
+import { api, ChatMessage } from '../../lib/api';
 import type { Extraction } from '../../../shared/types';
 
 export function AutomationPage() {
@@ -38,20 +38,38 @@ export function AutomationPage() {
   const [loadingExtraction, setLoadingExtraction] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   const [browserViewShown, setBrowserViewShown] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [loadingChats, setLoadingChats] = useState(false);
 
   useEffect(() => {
     fetchClients();
     fetchPortals();
   }, []);
 
-  // When client is selected, check for approved extraction
+  // When client is selected, check for approved extraction and load chats
   useEffect(() => {
     if (selectedClient) {
       loadApprovedExtraction(selectedClient);
+      loadChatHistory(selectedClient);
     } else {
       setApprovedExtraction(null);
+      setChatMessages([]);
     }
   }, [selectedClient]);
+
+  const loadChatHistory = async (clientId: string) => {
+    setLoadingChats(true);
+    try {
+      const result = await api.chat.list({ clientId });
+      if (result.success && result.data) {
+        setChatMessages(result.data);
+      }
+    } catch (error) {
+      console.error('Failed to load chats:', error);
+    } finally {
+      setLoadingChats(false);
+    }
+  };
 
   // When portal is selected, show BrowserView immediately
   useEffect(() => {
@@ -113,8 +131,7 @@ export function AutomationPage() {
 
   const handleStop = async () => {
     await stopAutomation();
-    setBrowserViewShown(false);
-    setSelectedPortal('');
+    // NOTE: Don't reset selectedPortal or browserViewShown - keep browser open for manual use
   };
 
   // Get status icon based on message
@@ -147,7 +164,7 @@ export function AutomationPage() {
         </div>
 
         {/* Configuration */}
-        {!isRunning && (
+        {!isRunning && (<>
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Configuration</CardTitle>
@@ -247,6 +264,52 @@ export function AutomationPage() {
               </Button>
             </CardContent>
           </Card>
+
+          {/* Chat History */}
+          {selectedClient && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4" />
+                  Chat History
+                </CardTitle>
+                <CardDescription>
+                  {chatMessages.length} messages with this client
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingChats ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  </div>
+                ) : chatMessages.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No chat history yet. AI instructions will be saved here.
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {chatMessages.map((msg) => (
+                      <div 
+                        key={msg._id} 
+                        className={`text-sm p-2 rounded ${
+                          msg.role === 'user' ? 'bg-blue-50 text-blue-900' : 
+                          msg.role === 'ai' ? 'bg-purple-50 text-purple-900' : 
+                          'bg-muted'
+                        }`}
+                      >
+                        <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                          <span className="font-medium capitalize">{msg.role}</span>
+                          <span>{new Date(msg.createdAt).toLocaleDateString()}</span>
+                        </div>
+                        <p className="line-clamp-2">{msg.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+          </>
         )}
 
         {/* Status */}
@@ -334,7 +397,7 @@ export function AutomationPage() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-green-600" />
-                    Form Filled - Review & Submit
+                    Form Filled - Review & Proceed
                   </CardTitle>
                   <CardDescription>{currentMapping.fields.length} fields filled</CardDescription>
                 </CardHeader>
@@ -357,10 +420,26 @@ export function AutomationPage() {
                       </p>
                     )}
                   </div>
-                  <div className="flex gap-2">
-                    <Button onClick={handleApprove} className="flex-1">
-                      <ArrowRight className="w-4 h-4" /> Submit Form
-                    </Button>
+                  
+                  {/* Dynamic Action Buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    {currentMapping.actions && currentMapping.actions.length > 0 ? (
+                      currentMapping.actions.map((action, i) => (
+                        <Button 
+                          key={i} 
+                          onClick={() => api.automation.executeAction({ actionIndex: i })} 
+                          variant={action.type === 'submit' || action.expectedText?.toLowerCase().includes('submit') ? 'default' : 'outline'}
+                          className="flex-1 min-w-[100px]"
+                        >
+                          <ArrowRight className="w-4 h-4" />
+                          {action.expectedText || action.description || 'Proceed'}
+                        </Button>
+                      ))
+                    ) : (
+                      <Button onClick={handleApprove} className="flex-1">
+                        <ArrowRight className="w-4 h-4" /> Submit Form
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -376,7 +455,7 @@ export function AutomationPage() {
             <Globe className="w-8 h-8" />
           </div>
           <p className="text-lg font-medium">Browser Preview</p>
-          <p className="text-sm">
+          <div className="text-sm">
             {browserViewShown || isRunning 
               ? (
                 <div className="space-y-4">
@@ -398,8 +477,8 @@ export function AutomationPage() {
                   )}
                 </div>
               )
-              : 'Select a portal to preview it here'}
-          </p>
+              : <span>Select a portal to preview it here</span>}
+          </div>
         </div>
       </div>
     </div>

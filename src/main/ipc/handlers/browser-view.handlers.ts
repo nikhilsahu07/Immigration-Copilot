@@ -50,5 +50,19 @@ export function registerBrowserViewHandlers(browserViewManager: BrowserViewManag
     }
   });
 
+  // Close Browser (disconnects Playwright and hides view)
+  ipcMain.handle(IPC_CHANNELS.BROWSER_CLOSE, async () => {
+    try {
+      const { browserConnector } = await import('../../automation/browser-connector');
+      await browserConnector.disconnect();
+      browserViewManager.hide();
+      logger.info('Browser closed by user');
+      return success(undefined);
+    } catch (error) {
+      logger.error('Close Browser error:', error);
+      return handleError(error);
+    }
+  });
+
   logger.debug('BrowserView handlers registered');
 }

@@ -90,6 +90,17 @@ export function registerAutomationHandlers(): void {
       return handleError(error);
     }
   });
+
+  // Execute specific action by index
+  ipcMain.handle(IPC_CHANNELS.AUTOMATION_EXECUTE_ACTION, async (_event, { actionIndex }) => {
+    try {
+      await automationService.executeAction(actionIndex);
+      return success(undefined);
+    } catch (error) {
+      logger.error('Execute action error:', error);
+      return handleError(error);
+    }
+  });
   
   logger.debug('Automation handlers registered');
 }
