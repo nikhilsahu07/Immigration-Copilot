@@ -61,6 +61,7 @@ export interface RegisterInput {
 }
 
 export interface AuthSession {
+  _id: string;
   agentId: string;
   companyId: string;
   email: string;

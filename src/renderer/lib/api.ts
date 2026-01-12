@@ -23,8 +23,6 @@ import type {
   CreateJobInput,
   FormMapping,
   AutomationState,
-  FormMapping,
-  AutomationState,
   AgentPublic,
   CreateAgentInput,
   UpdateAgentInput,
@@ -66,8 +64,8 @@ export interface ElectronAPI {
   auth: {
     register: (data: RegisterInput) => Promise<Result<LoginResponse>>;
     login: (data: LoginInput) => Promise<Result<LoginResponse>>;
-    logout: () => Promise<Result<void>>;
-    getSession: () => Promise<Result<AuthSession | null>>;
+    logout: (sessionId?: string) => Promise<Result<void>>;
+    getSession: (sessionId?: string) => Promise<Result<AuthSession | null>>;
   };
   company: {
     get: (data: { id: string }) => Promise<Result<unknown>>;

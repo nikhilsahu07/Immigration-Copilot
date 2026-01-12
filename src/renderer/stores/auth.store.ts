@@ -1,3 +1,4 @@
+
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../lib/api';
@@ -21,7 +22,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       isAuthenticated: false,
       isLoading: false,
       agent: null,
@@ -76,8 +77,9 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: async () => {
+        const { session } = get();
         try {
-          await api.auth.logout();
+          await api.auth.logout(session?._id);
         } finally {
           set({
             isAuthenticated: false,
@@ -90,18 +92,32 @@ export const useAuthStore = create<AuthState>()(
       },
 
       checkSession: async () => {
+        const { session } = get();
         try {
-          const result = await api.auth.getSession();
+          // If we have a local session, try to validate it with backend
+          const sessionId = session ? session._id : undefined;
+
+          // If no sessionId locally, assume not authenticated (unless we want to support magic implicit sessions which we don't anymore)
+          if (!sessionId) {
+              // If we thought we were authenticated but have no session ID, reset
+              if (get().isAuthenticated) {
+                  set({ isAuthenticated: false, session: null, agent: null, company: null });
+              }
+              return;
+          }
+
+          const result = await api.auth.getSession(sessionId);
           if (result.success && result.data) {
             set({
               isAuthenticated: true,
               session: result.data,
             });
           } else {
-            set({ isAuthenticated: false, session: null });
+            // Session invalid or expired
+            set({ isAuthenticated: false, session: null, agent: null, company: null });
           }
         } catch {
-          set({ isAuthenticated: false, session: null });
+          set({ isAuthenticated: false, session: null, agent: null, company: null });
         }
       },
 
@@ -113,6 +129,7 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: state.isAuthenticated,
         agent: state.agent,
         company: state.company,
+        session: state.session, // Persist session now!
       }),
     }
   )

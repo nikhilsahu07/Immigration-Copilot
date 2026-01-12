@@ -1,5 +1,6 @@
+
 import bcrypt from 'bcrypt';
-import { companyRepository, agentRepository, auditLogRepository } from '../../database/repositories';
+import { companyRepository, agentRepository, auditLogRepository, sessionRepository } from '../../database/repositories';
 import { RegisterInput, LoginInput, LoginResponse, AuthSession } from '../../../shared/types';
 import { createError } from '../../core/error-handler';
 import { ERROR_CODES } from '../../../shared/constants';
@@ -7,9 +8,6 @@ import { logger } from '../../core/logger';
 import { getEnv } from '../../config';
 
 const BCRYPT_ROUNDS = 10;
-
-// In-memory session store (in production, use Redis or similar)
-const sessions = new Map<string, AuthSession>();
 
 function generateSessionId(): string {
   return `sess_${Date.now()}_${Math.random().toString(36).substring(2)}`;
@@ -46,7 +44,7 @@ export class AuthService {
     });
 
     // Create session
-    const session = this.createSession(agent._id, company._id, agent.email, agent.name, agent.role);
+    const session = await this.createSession(agent._id, company._id, agent.email, agent.name, agent.role);
 
     // Log audit
     await auditLogRepository.log(
@@ -108,7 +106,7 @@ export class AuthService {
     await agentRepository.updateLastLogin(agent._id);
 
     // Create session
-    const session = this.createSession(agent._id, company._id, agent.email, agent.name, agent.role);
+    const session = await this.createSession(agent._id, company._id, agent.email, agent.name, agent.role);
 
     // Log audit
     await auditLogRepository.log(
@@ -141,7 +139,7 @@ export class AuthService {
   }
 
   async logout(sessionId: string): Promise<void> {
-    const session = sessions.get(sessionId);
+    const session = await sessionRepository.findById(sessionId);
     if (session) {
       await auditLogRepository.log(
         session.companyId,
@@ -150,38 +148,40 @@ export class AuthService {
         'agent',
         session.agentId
       );
-      sessions.delete(sessionId);
+      await sessionRepository.delete(sessionId);
       logger.info(`Agent logged out: ${session.email}`);
     }
   }
 
-  getSession(sessionId: string): AuthSession | null {
-    const session = sessions.get(sessionId);
+  async getSession(sessionId: string): Promise<AuthSession | null> {
+    const session = await sessionRepository.findById(sessionId);
     if (!session) {
       return null;
     }
 
-    // Check if expired
+    // Check if expired (double check in case TTL hasn't run yet)
     if (new Date() > session.expiresAt) {
-      sessions.delete(sessionId);
+      await sessionRepository.delete(sessionId);
       return null;
     }
 
     return session;
   }
 
-  private createSession(
+  private async createSession(
     agentId: string,
     companyId: string,
     email: string,
     name: string,
     role: 'admin' | 'agent'
-  ): AuthSession {
+  ): Promise<AuthSession> {
     const env = getEnv();
     const expiryDays = parseInt(env.SESSION_EXPIRY_DAYS, 10) || 7;
     const expiresAt = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000);
+    const sessionId = generateSessionId();
 
     const session: AuthSession = {
+      _id: sessionId,
       agentId,
       companyId,
       email,
@@ -190,9 +190,7 @@ export class AuthService {
       expiresAt,
     };
 
-    const sessionId = generateSessionId();
-    sessions.set(sessionId, session);
-
+    await sessionRepository.create(session);
     return session;
   }
 
@@ -207,7 +205,7 @@ export class AuthService {
 
 export const authService = new AuthService();
 
-// Current session (per window)
+// Current session (per window) - keeping this for quick access in same session
 let currentSession: { sessionId: string; session: AuthSession } | null = null;
 
 export function setCurrentSession(sessionId: string, session: AuthSession): void {
