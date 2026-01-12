@@ -1,7 +1,7 @@
 
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import { getEnv } from '../config/environment';
-import { logger } from '../core/logger';
+import { logger, geminiPromptLogger } from '../core/logger';
 import fs from 'fs';
 import path from 'path';
 
@@ -11,14 +11,23 @@ export interface AIAnalysisResult {
     value: string;
     reason: string;
     fieldName: string;
+    fieldType?: string;
   }[];
   actions: {
     type: 'click' | 'wait' | 'submit';
     selector?: string;
     description: string;
+    expectedText?: string; // For safer button clicking
   }[];
-  captchaDetected: boolean;
-  otpDetected: boolean;
+  captcha: {
+    detected: boolean;
+    isInsideForm: boolean;
+  };
+  otp: {
+    detected: boolean;
+    selector?: string;
+  };
+  pageType: 'dashboard' | 'form' | 'confirmation' | 'unknown';
   isFormPage: boolean;
   pageSummary: string;
 }
@@ -41,48 +50,93 @@ export class AIService {
 
   async analyzePageAndMapFields(
     html: string, 
-    clientData: any, 
+    extractedData: any,
+    documentList: { name: string; category: string }[],
     customPrompt?: string
   ): Promise<AIAnalysisResult> {
     try {
+      // Build document list string
+      const documentListStr = documentList.length > 0
+        ? documentList.map(d => `- ${d.category}: ${d.name}`).join('\n')
+        : 'No documents attached';
+
       const prompt = `
-        You are an intelligent automation agent filling out visa forms.
+        You are an intelligent automation agent filling out visa/immigration forms.
         
         TASK:
-        Analyze the provided HTML and map the available form fields to the provided Client Data.
+        1. First, classify the page type (dashboard, form, confirmation, or unknown)
+        2. If it's a DASHBOARD page: identify navigation buttons/links to click (e.g., "Create New Application")
+        3. If it's a FORM page: map form fields to the provided client data
         
-        CLIENT DATA:
-        ${JSON.stringify(clientData, null, 2)}
+        CLIENT EXTRACTED DATA:
+        ${JSON.stringify(extractedData, null, 2)}
+        
+        ATTACHED DOCUMENTS:
+        ${documentListStr}
         
         CUSTOM INSTRUCTIONS:
         ${customPrompt || 'None'}
         
         HTML CONTEXT:
-        ${html.substring(0, 100000)} // Truncate to avoid token limits if extremely large
+        ${html.substring(0, 100000)}
 
         OUTPUT INSTRUCTIONS:
         Return a valid JSON object with the following structure:
         {
+          "pageType": "dashboard" | "form" | "confirmation" | "unknown",
+          "pageSummary": "Brief description of the page",
+          "isFormPage": boolean,
           "fields": [
-            { "selector": "CSS selector for the input", "value": "Value to fill based on client data", "fieldName": "Name of the field", "reason": "Why this value was chosen" }
+            { 
+              "selector": "SIMPLE CSS selector ONLY (e.g. button[data='green'], #id, .class)", 
+              "value": "Value to fill based on client data", 
+              "fieldName": "Name of the field", 
+              "fieldType": "text|select|radio|checkbox|date|file|email|tel",
+              "reason": "Why this value was chosen" 
+            }
           ],
           "actions": [
-            { "type": "click/submit/wait", "selector": "CSS selector if applicable", "description": "What this action does" }
+            { 
+              "type": "click|submit|wait", 
+              "selector": "SIMPLE CSS selector ONLY - NO :contains(), NO :has(), NO jQuery selectors", 
+              "expectedText": "Exact visible button text (REQUIRED - used for matching)",
+              "description": "What this action does" 
+            }
           ],
-          "captchaDetected": boolean,
-          "otpDetected": boolean,
-          "isFormPage": boolean,
-          "pageSummary": "Brief description of the page"
+          "captcha": {
+            "detected": boolean,
+            "isInsideForm": boolean
+          },
+          "otp": {
+            "detected": boolean,
+            "selector": "CSS selector for OTP input if found"
+          }
         }
 
-        RULES:
-        1. Only map fields that are present in the HTML.
-        2. If a field requires data not present in Client Data, leave value empty or use "N/A" if appropriate, and note in reason.
-        3. Detect if CAPTCHA or OTP is required to proceed.
-        4. Identify the "Next" or "Submit" button as an action.
-        5. IGNORE hidden fields unless necessary.
-        6. Return raw JSON only, no markdown formatting.
+        CRITICAL RULES:
+        1. For DASHBOARD pages: fields array should be empty, focus on actions array with navigation clicks
+        2. For FORM pages: fields array should have form fields, actions should include submit button
+        3. SELECTOR FORMAT: Use ONLY valid CSS selectors. NEVER use :contains(), :has(), or jQuery pseudo-selectors - they are INVALID
+        4. For click actions: Use a SIMPLE selector (e.g. "button[data='green']", ".buttons_border") and put the button text in "expectedText"
+        5. Only map fields that are present in the HTML
+        6. If a field requires data not present, leave value empty and note in reason
+        7. Detect CAPTCHA only if it's inside the form and blocking submission
+        8. Return raw JSON only, no markdown formatting
       `;
+
+      // Log prompt to gemini_prompt.logs
+      geminiPromptLogger.info(
+        '--- NEW AUTOMATION REQUEST ---\n' + 
+        `TIMESTAMP: ${new Date().toISOString()}\n\n` +
+        '--- PAGE TYPE ANALYSIS ---\n' +
+        '--- CUSTOM PROMPT ---\n' + 
+        (customPrompt || 'None') + '\n\n' + 
+        '--- DOCUMENTS ---\n' +
+        documentListStr + '\n\n' +
+        '--- FINAL PROMPT ---\n' + 
+        prompt + '\n\n' +
+        '--------------------------------------------------\n'
+      );
 
       const result = await this.model.generateContent(prompt);
       const response = result.response;

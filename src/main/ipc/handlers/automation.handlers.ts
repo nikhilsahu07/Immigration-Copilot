@@ -58,6 +58,17 @@ export function registerAutomationHandlers(): void {
     }
   });
 
+  // Resume After Captcha
+  ipcMain.handle(IPC_CHANNELS.AUTOMATION_RESUME_AFTER_CAPTCHA, async () => {
+    try {
+      await automationService.resumeAfterCaptcha();
+      return success(undefined);
+    } catch (error) {
+      logger.error('Resume after captcha error:', error);
+      return handleError(error);
+    }
+  });
+
   // Get State
   ipcMain.handle(IPC_CHANNELS.AUTOMATION_GET_STATE, async () => {
     try {

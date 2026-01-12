@@ -124,7 +124,8 @@ OUTPUT SCHEMA:
   ],
   "captcha": {
     "detected": boolean,
-    "type": "reCAPTCHA|hCAPTCHA|Cloudflare|custom" | null
+    "type": "reCAPTCHA|hCAPTCHA|Cloudflare|custom" | null,
+    "isInsideForm": boolean
   },
   "otp": {
     "detected": boolean,
@@ -143,5 +144,5 @@ CRITICAL RULES:
 4. For DATE fields: use format the form expects (check placeholder/pattern)
 5. Use most reliable CSS selector (prefer #id > [name] > .class)
 6. If unsure, mark confidence as "medium" or "low"
-7. Detect CAPTCHA/OTP fields and mark them (don't try to fill)
+7. Detect CAPTCHA/OTP fields and mark them (only if inside the form)
 8. Return COMPLETE valid JSON with all closing brackets`;

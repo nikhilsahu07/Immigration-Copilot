@@ -11,7 +11,8 @@ import {
   automationJobRepository, 
   clientRepository, 
   portalRepository, 
-  extractionRepository 
+  extractionRepository,
+  documentRepository
 } from '../database/repositories';
 import { logger } from '../core/logger';
 import { createError } from '../core/error-handler';
@@ -51,7 +52,6 @@ export class AutomationService {
     // 2. Create Job in DB
     const job = await automationJobRepository.create(companyId, agentId, {
       ...input,
-      status: 'running',
     });
 
     this.currentJob = job;
@@ -84,7 +84,7 @@ export class AutomationService {
     return job;
   }
 
-  // Main processing loop - fill first, then ask approval
+  // Main processing loop - routes to appropriate handler based on page type
   private async processPage(
     client: Client, 
     extraction: Extraction, 
@@ -115,73 +115,135 @@ export class AutomationService {
       const cleaned = await pageManager.extractHtml();
       this.emitStatus('Page structure ready', 20);
 
-      // 2. AI Analysis
+      // 2. Fetch documents for context
+      const documents = await documentRepository.findByClient(client._id, this.currentJob?.companyId || '');
+      const documentList = documents.map(d => ({ 
+        name: d.originalName, 
+        category: d.documentType 
+      }));
+
+      // 3. AI Analysis with page type classification
       this.emitStatus('Processing with AI...', 30);
       const aiResult = await aiService.analyzePageAndMapFields(
         cleaned, 
-        { 
-          clientProfile: client, 
-          extractedData: extraction.extractedData 
-        },
+        extraction.extractedData,
+        documentList,
         customPrompt
       );
-      this.emitStatus('Got AI response', 50);
+      this.emitStatus(`Got AI response: ${aiResult.pageType} page`, 50);
 
-      // 3. Handle Special States via PageManager + AI result
-      const detection = await pageManager.detectSpecialElements();
-      
-      if (detection.hasCaptcha || aiResult.captchaDetected) {
-        this.pause('captcha');
-        this.emitCaptchaDetected('generic');
-        return;
+      logger.info(`Page classified as: ${aiResult.pageType} - ${aiResult.pageSummary}`);
+
+      // 4. Route based on page type
+      if (aiResult.pageType === 'dashboard' || !aiResult.isFormPage) {
+        await this.processDashboardPage(pageManager, aiResult, client, extraction, portalUrl, customPrompt);
+      } else {
+        await this.processFormPage(pageManager, aiResult, client, extraction, portalUrl, customPrompt);
       }
-
-      if (detection.hasOtp || aiResult.otpDetected) {
-        this.pause('otp');
-        this.emitOtpRequired(detection.selector || 'input[name*="otp"]');
-        return;
-      }
-
-      // 4. Ensure fields is an array (fix "fields is not iterable" error)
-      const fields = Array.isArray(aiResult.fields) ? aiResult.fields : [];
-      
-      if (fields.length === 0) {
-        this.emitStatus('No form fields detected on this page', 50);
-        logger.warn('AI returned no fields or invalid fields structure');
-        return;
-      }
-
-      // 5. Fill form FIRST (like toyVersion)
-      this.emitStatus('Filling form...', 60);
-      const mappedFields: AutomatedField[] = fields.map((f: Record<string, unknown>, i: number) => ({
-        fieldIndex: i,
-        fieldName: (f.fieldName as string) || '',
-        fieldLabel: (f.fieldName as string) || '',
-        fieldType: (f.fieldType as string) || 'text',
-        selector: (f.selector as string) || '',
-        value: (f.value as string) || '',
-        confidence: 'high',
-        reasoning: (f.reason as string) || '',
-      }));
-
-      await pageManager.fillForm(mappedFields);
-      this.emitStatus('Form filled. Please review.', 80);
-
-      // 6. Now emit mapping for approval
-      const mapping = {
-        fields: mappedFields,
-        captcha: { detected: false },
-        otp: { detected: false },
-        submitButton: { selector: 'button[type="submit"]', text: 'Submit' },
-      };
-
-      this.currentMapping = mapping as unknown as FormMapping;
-      this.emitMapping(mapping);
 
     } catch (error) {
       logger.error('Page processing failed:', error);
       this.emitStatus('Error processing page', 0);
     }
+  }
+
+  // Handle dashboard/navigation pages - execute click actions
+  private async processDashboardPage(
+    pageManager: PageManager,
+    aiResult: any,
+    client: Client,
+    extraction: Extraction,
+    portalUrl: string,
+    customPrompt?: string
+  ) {
+    this.emitStatus('Dashboard detected - executing navigation...', 60);
+
+    const actions = aiResult.actions || [];
+    if (actions.length === 0) {
+      logger.warn('No actions found for dashboard page');
+      this.emitStatus('No navigation actions found', 50);
+      return;
+    }
+
+    // Execute actions (clicks, navigations)
+    const success = await pageManager.executeActions(actions);
+    
+    if (success) {
+      this.emitStatus('Navigation executed, waiting for new page...', 80);
+      
+      // Wait for navigation and then process next page
+      await new Promise(r => setTimeout(r, 2000));
+      
+      if (this.isRunning && !this.isPaused) {
+        this.processPage(client, extraction, portalUrl, customPrompt);
+      }
+    } else {
+      this.emitStatus('Navigation action failed', 50);
+      logger.error('Failed to execute dashboard actions');
+    }
+  }
+
+  // Handle form pages - fill fields and handle approval
+  private async processFormPage(
+    pageManager: PageManager,
+    aiResult: any,
+    _client: Client,
+    _extraction: Extraction,
+    _portalUrl: string,
+    _customPrompt?: string
+  ) {
+    // Ensure fields is an array
+    const fields = Array.isArray(aiResult.fields) ? aiResult.fields : [];
+    
+    if (fields.length === 0) {
+      this.emitStatus('No form fields detected on this page', 50);
+      logger.warn('AI returned no fields or invalid fields structure');
+    }
+
+    // Fill form
+    this.emitStatus('Filling form...', 60);
+    const mappedFields: AutomatedField[] = fields.map((f: any, i: number) => ({
+      fieldIndex: i,
+      fieldName: (f.fieldName as string) || '',
+      fieldLabel: (f.fieldName as string) || '',
+      fieldType: (f.fieldType as string) || 'text',
+      selector: (f.selector as string) || '',
+      value: (f.value as string) || '',
+      confidence: 'high',
+      reasoning: (f.reason as string) || '',
+    }));
+
+    await pageManager.fillForm(mappedFields);
+    this.emitStatus('Form filled. Please review.', 80);
+
+    // Handle Special States (Captcha/OTP) - AFTER filling
+    const detection = await pageManager.detectSpecialElements();
+    
+    const geminiSaysCaptchaInside = aiResult.captcha && aiResult.captcha.detected && aiResult.captcha.isInsideForm;
+    const localSaysCaptcha = detection.hasCaptcha;
+
+    if (localSaysCaptcha || geminiSaysCaptchaInside) {
+      this.pause('captcha');
+      this.emitCaptchaDetected('generic');
+      return;
+    }
+
+    if (detection.hasOtp || (aiResult.otp && aiResult.otp.detected)) {
+      this.pause('otp');
+      this.emitOtpRequired(detection.selector || (aiResult.otp && aiResult.otp.selector) || 'input[name*="otp"]');
+      return;
+    }
+
+    // Emit mapping for approval
+    const mapping = {
+      fields: mappedFields,
+      captcha: { detected: false },
+      otp: { detected: false },
+      submitButton: { selector: 'button[type="submit"]', text: 'Submit' },
+    };
+
+    this.currentMapping = mapping as unknown as FormMapping;
+    this.emitMapping(mapping);
   }
 
   // Called when user clicks "Approve/Proceed" - clicks submit button
@@ -300,6 +362,11 @@ export class AutomationService {
     }
     this.isPaused = false;
     this.emitStatus('Resuming...', 0);
+  }
+
+  async resumeAfterCaptcha(): Promise<void> {
+    logger.info('Resuming after captcha...');
+    await this.resume();
   }
 
   async getState(): Promise<AutomationState> {

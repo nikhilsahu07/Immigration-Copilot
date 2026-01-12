@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI, GenerativeModel, Part } from '@google/generative-ai';
 import { getAIConfig, EXTRACTION_PROMPT_TEMPLATE, MAPPING_PROMPT_TEMPLATE } from '../../config';
 import { GeminiExtractionRequest, GeminiMappingRequest, GeminiExtractionResponse, GeminiMappingResponse, GeminiResponse } from '../../../shared/types';
-import { logger } from '../../core/logger';
+import { logger, geminiPromptLogger } from '../../core/logger';
 
 let genAI: GoogleGenerativeAI | null = null;
 let model: GenerativeModel | null = null;
@@ -83,6 +83,19 @@ export class GeminiService {
     
     try {
       const prompt = this.buildMappingPrompt(request);
+
+      // Log the prompt details as requested
+      geminiPromptLogger.info(
+        '--- NEW GEMINI REQUEST ---\n' + 
+        `TIMESTAMP: ${new Date().toISOString()}\n\n` +
+        '--- CLEANED HTML STRUCTURE ---\n' + 
+        JSON.stringify(request.htmlFields, null, 2) + '\n\n' + 
+        '--- CUSTOM PROMPT ---\n' + 
+        (request.customPrompt || 'None') + '\n\n' + 
+        '--- FINAL FIXED PROMPT ---\n' + 
+        prompt + '\n\n' +
+        '--------------------------------------------------\n'
+      );
 
       logger.info('Sending mapping request to Gemini...');
       const result = await getModel().generateContent(prompt);

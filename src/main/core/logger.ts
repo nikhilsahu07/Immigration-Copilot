@@ -73,6 +73,21 @@ export const logger = winston.createLogger({
 // Create automation-specific logger
 export const automationLogger = logger.child({ service: 'automation' });
 
+// Create gemini prompt logger
+export const geminiPromptLogger = winston.createLogger({
+  level: 'info',
+  format: winston.format.printf(({ message }) => {
+    return message as string;
+  }),
+  transports: [
+    new winston.transports.File({
+      filename: path.join(logDir, 'gemini_prompt.logs'),
+      maxsize: 10 * 1024 * 1024,
+      maxFiles: 3,
+    }),
+  ],
+});
+
 // Sanitize sensitive data from logs
 export function sanitizeForLog(data: Record<string, unknown>): Record<string, unknown> {
   const sensitiveKeys = ['password', 'passwordHash', 'apiKey', 'secret', 'token', 'accessKey'];

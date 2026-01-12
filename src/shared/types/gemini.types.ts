@@ -84,6 +84,7 @@ export interface GeminiMappingResponse {
   captcha: {
     detected: boolean;
     type?: string;
+    isInsideForm?: boolean;
   };
   otp: {
     detected: boolean;
