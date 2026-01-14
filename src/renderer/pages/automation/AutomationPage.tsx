@@ -17,6 +17,7 @@ export function AutomationPage() {
     captchaType,
     otpDetected,
     isLoading,
+    automationMode,
     startAutomation,
     stopAutomation,
     pauseAutomation,
@@ -26,6 +27,7 @@ export function AutomationPage() {
     resumeAfterCaptcha,
     loadUrl,
     hidePreview,
+    setAutomationMode,
   } = useAutomationStore();
 
   const { clients, fetchClients, isLoading: clientsLoading } = useClientStore();
@@ -279,6 +281,36 @@ export function AutomationPage() {
                 <p className="text-xs text-muted-foreground">
                   Add custom instructions for the AI to follow when filling the form.
                 </p>
+              </div>
+
+              {/* Auto/Manual Mode Toggle */}
+              <div className="flex items-center justify-between py-3 px-3 rounded-md bg-muted/50">
+                <div className="flex items-center gap-2">
+                  <Bot className="w-4 h-4 text-muted-foreground" />
+                  <div>
+                    <Label className="text-sm font-medium">Auto Mode</Label>
+                    <p className="text-xs text-muted-foreground">
+                      {automationMode === 'auto' 
+                        ? 'AI fills and submits forms automatically' 
+                        : 'Manual approval required for each step'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={automationMode === 'auto'}
+                  onClick={() => setAutomationMode(automationMode === 'auto' ? 'manual' : 'auto')}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
+                    automationMode === 'auto' ? 'bg-primary' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      automationMode === 'auto' ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
               </div>
 
               <Button 

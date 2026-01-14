@@ -67,6 +67,11 @@ export const IPC_CHANNELS = {
   AUTOMATION_EXECUTE_ACTION: 'automation:execute-action',
   AUTOMATION_GET_STATE: 'automation:get-state',
   AUTOMATION_GET_HISTORY: 'automation:get-history',
+  
+  // Iterative Exploration - Mode & Approvals
+  AUTOMATION_SET_MODE: 'automation:set-mode',
+  AUTOMATION_APPROVE_ACTION: 'automation:approve-action',
+  AUTOMATION_REJECT_ACTION: 'automation:reject-action',
 
   // BrowserView
   BROWSER_VIEW_LOAD: 'browser-view:load',
@@ -84,6 +89,10 @@ export const IPC_CHANNELS = {
   EVENT_PAGE_CHANGED: 'event:page-changed',
   EVENT_MANUAL_INPUT_REQUIRED: 'event:manual-input-required',
   EVENT_ERROR: 'event:error',
+  
+  // Iterative Exploration Events
+  EVENT_ACTION_PENDING: 'event:action-pending',
+  EVENT_EXPLORATION_STATE: 'event:exploration-state',
 } as const;
 
 export type IPCChannel = typeof IPC_CHANNELS[keyof typeof IPC_CHANNELS];

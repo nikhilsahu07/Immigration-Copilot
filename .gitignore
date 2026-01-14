@@ -39,3 +39,6 @@ coverage/
 
 # Misc
 *.tsbuildinfo
+
+# Temporary files
+resources/temp/

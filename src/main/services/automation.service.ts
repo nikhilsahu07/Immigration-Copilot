@@ -312,7 +312,13 @@ export class AutomationService {
     });
 
     // Check for empty fields before filling
-    const emptyFields = mappedFields.filter(f => !f.value || f.value.trim() === '' || f.value === 'N/A');
+    // Safely handle non-string values (Gemini sometimes returns null, true, false)
+    const emptyFields = mappedFields.filter(f => {
+      const val = f.value;
+      if (val === null || val === undefined) return true;
+      if (typeof val === 'string') return val.trim() === '' || val === 'N/A';
+      return false; // boolean or other types are considered filled
+    });
     
     await pageManager.fillForm(mappedFields);
     
@@ -361,6 +367,29 @@ export class AutomationService {
     };
 
     this.currentMapping = mapping as unknown as FormMapping;
+    
+    // AUTO MODE: Proceed automatically without waiting for user approval
+    if (this.automationMode === 'auto') {
+      this.emitStatus('Auto mode: Proceeding to next step...', 85);
+      logger.info('Auto mode enabled - auto-proceeding after form fill');
+      
+      // If there are actions (like Next/Submit buttons), execute the first one
+      if (actions.length > 0) {
+        try {
+          await this.executeAction(0);
+        } catch (err) {
+          logger.error('Auto-proceed action failed:', err);
+          // Fall back to trying submit button
+          await this.approveMapping(mapping as unknown as FormMapping);
+        }
+      } else {
+        // No actions defined, try standard submit
+        await this.approveMapping(mapping as unknown as FormMapping);
+      }
+      return;
+    }
+    
+    // MANUAL MODE: Emit mapping and wait for user approval
     this.emitMapping(mapping);
   }
 
@@ -547,6 +576,7 @@ export class AutomationService {
       needsApproval: !!this.currentMapping,
       captchaDetected: false,
       otpDetected: false,
+      automationMode: 'auto', // Default to auto mode
     };
   }
 
@@ -601,6 +631,50 @@ export class AutomationService {
     
     // Also pause the automation on error
     this.pause('error');
+  }
+
+  // Iterative Exploration Mode Methods
+
+  private automationMode: 'auto' | 'manual' = 'auto';
+  private stateExplorer: import('./automation/state-explorer').StateExplorer | null = null;
+
+  /**
+   * Set automation mode (auto/manual)
+   * In manual mode, each action requires user approval before execution
+   */
+  setMode(mode: 'auto' | 'manual'): void {
+    this.automationMode = mode;
+    logger.info(`Automation mode set to: ${mode}`);
+    
+    // Update state explorer if running
+    if (this.stateExplorer) {
+      this.stateExplorer.setMode(mode);
+    }
+  }
+
+  /**
+   * Approve the pending action in manual mode
+   */
+  approveAction(): void {
+    if (this.stateExplorer) {
+      this.stateExplorer.approveAction();
+    }
+  }
+
+  /**
+   * Reject the pending action in manual mode
+   */
+  rejectAction(): void {
+    if (this.stateExplorer) {
+      this.stateExplorer.rejectAction();
+    }
+  }
+
+  /**
+   * Get current automation mode
+   */
+  getMode(): 'auto' | 'manual' {
+    return this.automationMode;
   }
 }
 

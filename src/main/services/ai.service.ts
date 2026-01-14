@@ -2,6 +2,7 @@
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import { getEnv } from '../config/environment';
 import { logger, geminiPromptLogger } from '../core/logger';
+import { DecisionResult } from '../../shared/types';
 import fs from 'fs';
 import path from 'path';
 
@@ -157,6 +158,136 @@ export class AIService {
 
     } catch (error) {
       logger.error('AI Analysis failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unified exploration decision method for iterative SPA automation.
+   * Returns a single DecisionResult indicating what action to take next.
+   * 
+   * CRITICAL: Implements Negative Mapping via filledFieldSelectors to prevent duplicate filling.
+   */
+  async makeExplorationDecision(
+    html: string,
+    extractedData: Record<string, unknown>,
+    filledFieldSelectors: string[],
+    visitedElements: string[],
+    documentList: { name: string; category: string }[]
+  ): Promise<DecisionResult> {
+    try {
+      // Build document list string
+      const documentListStr = documentList.length > 0
+        ? documentList.map(d => `- ${d.category}: ${d.name}`).join('\n')
+        : 'No documents attached';
+
+      // Build ignore lists for Negative Mapping
+      const ignoreFieldsStr = filledFieldSelectors.length > 0
+        ? filledFieldSelectors.join(', ')
+        : 'None';
+      
+      const ignoreElementsStr = visitedElements.length > 0
+        ? visitedElements.join(', ')
+        : 'None';
+
+      const prompt = `
+You are an automation agent. Look at this HTML and decide the SINGLE best action.
+
+PRIORITY ORDER (follow strictly):
+1. If there are visible EMPTY input/select/textarea fields that need filling → return type "FILL"
+2. If there are unexplored tabs/accordion buttons that might reveal more fields → return type "NAVIGATE"
+3. If there's a file upload field (<input type="file">) needing a document → return type "UPLOAD"
+4. If all visible fields are filled AND no more sections to explore → return type "DONE"
+
+=== CRITICAL: IGNORE THESE (ALREADY FILLED) ===
+${ignoreFieldsStr}
+
+=== CRITICAL: IGNORE THESE (ALREADY VISITED) ===
+${ignoreElementsStr}
+
+=== CLIENT DATA (use to fill fields) ===
+${JSON.stringify(extractedData, null, 2)}
+
+=== AVAILABLE DOCUMENTS (for file uploads) ===
+${documentListStr}
+
+=== VISIBLE HTML ===
+${html.substring(0, 80000)}
+
+=== INSTRUCTIONS ===
+Return ONLY valid JSON in ONE of these formats:
+
+For FILL action (filling form fields):
+{
+  "type": "FILL",
+  "fields": [
+    {
+      "selector": "input#firstName OR input[name='firstName'] OR input[aria-label='First Name']",
+      "value": "The value to fill",
+      "fieldType": "text|select|radio|checkbox|date|email|tel|number",
+      "fieldName": "Field label for display"
+    }
+  ]
+}
+
+For NAVIGATE action (clicking tab/button to reveal more fields):
+{
+  "type": "NAVIGATE",
+  "selector": "button#nextTab OR [role='tab'][aria-label='Address']",
+  "description": "Click to reveal address fields"
+}
+
+For UPLOAD action (file upload):
+{
+  "type": "UPLOAD",
+  "selector": "input[type='file']#passport",
+  "documentName": "passport.pdf"
+}
+
+For DONE action (all complete):
+{
+  "type": "DONE",
+  "reason": "All visible fields filled, no more tabs to explore"
+}
+
+SELECTOR RULES:
+- Use stable selectors: #id, [name="..."], [aria-label="..."], [data-testid="..."]
+- NEVER use dynamic classes like .css-1x2y3z or .sc-abc123
+- NEVER use :contains(), :has(), or jQuery pseudo-selectors
+
+Return raw JSON only, no markdown.`;
+
+      // Log prompt
+      geminiPromptLogger.info(
+        '--- EXPLORATION DECISION REQUEST ---\n' + 
+        `TIMESTAMP: ${new Date().toISOString()}\n\n` +
+        `FILLED SELECTORS: ${filledFieldSelectors.length}\n` +
+        `VISITED ELEMENTS: ${visitedElements.length}\n\n` +
+        '--- PROMPT ---\n' + 
+        prompt + '\n\n' +
+        '--------------------------------------------------\n'
+      );
+
+      const result = await this.model.generateContent(prompt);
+      const response = result.response;
+      const text = response.text();
+      
+      // Clean markdown code blocks if present
+      const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      
+      this.logResponse(cleanJson);
+
+      const parsed = JSON.parse(cleanJson);
+      
+      // Validate the response matches DecisionResult structure
+      if (!parsed.type || !['FILL', 'NAVIGATE', 'UPLOAD', 'DONE'].includes(parsed.type)) {
+        throw new Error(`Invalid decision type: ${parsed.type}`);
+      }
+
+      return parsed as DecisionResult;
+
+    } catch (error) {
+      logger.error('Exploration decision failed:', error);
       throw error;
     }
   }
