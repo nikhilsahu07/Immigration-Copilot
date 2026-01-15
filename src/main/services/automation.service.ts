@@ -24,13 +24,19 @@ import { getWindowManager, getBrowserViewManager } from '../index';
 import { browserConnector } from '../automation/browser-connector';
 import { PageManager } from '../automation/page-manager';
 import { aiService } from './ai.service';
+import { StateExplorer } from './automation/state-explorer';
 import type { AutomatedField } from '../automation/fillers/base-filler';
+import type { AutomationMode } from '../../shared/types';
 
 export class AutomationService {
   private currentJob: AutomationJob | null = null;
   private currentMapping: FormMapping | null = null;
   private isRunning: boolean = false;
   private isPaused: boolean = false;
+  
+  // Iterative exploration
+  private automationMode: AutomationMode = 'auto';
+  private stateExplorer: StateExplorer | null = null;
 
   async start(
     companyId: string, 
@@ -97,20 +103,26 @@ export class AutomationService {
       throw e;
     }
 
+
     return job;
   }
 
-  // Main processing loop - routes to appropriate handler based on page type
+  /**
+   * Main processing entry - Uses StateExplorer for iterative SPA automation
+   * 
+   * This replaces the old batch mapper approach (analyzePageAndMapFields)
+   * with an iterative loop: Observe → Decide → Act → Repeat
+   */
   private async processPage(
     client: Client, 
     extraction: Extraction, 
     portalUrl: string,
-    customPrompt?: string
+    _customPrompt?: string
   ) {
     if (!this.isRunning || this.isPaused) return;
 
     try {
-      this.emitStatus('Downloading page structure...', 15);
+      this.emitStatus('Connecting to browser...', 10);
       this.emitPageChanged(this.currentJob?.currentPage || 1, this.currentJob?.totalPages || 10);
       
       // Get the page from Playwright
@@ -121,17 +133,11 @@ export class AutomationService {
       } catch (_e) {
         logger.warn(`Could not find page for ${portalDomain}, waiting for page load...`);
         this.emitStatus('Waiting for page load...', 15);
-        setTimeout(() => this.processPage(client, extraction, portalUrl, customPrompt), 3000);
+        setTimeout(() => this.processPage(client, extraction, portalUrl, _customPrompt), 3000);
         return;
       }
-      
-      const pageManager = new PageManager(page);
 
-      // 1. Extract HTML
-      const cleaned = await pageManager.extractHtml();
-      this.emitStatus('Page structure ready', 20);
-
-      // 2. Fetch documents for context (include s3Key for file uploads)
+      // Fetch documents for context (include s3Key for file uploads)
       const documents = await documentRepository.findByClient(client._id, this.currentJob?.companyId || '');
       const documentList = documents.map(d => ({ 
         name: d.originalName, 
@@ -142,23 +148,41 @@ export class AutomationService {
       // Create lookup map for resolving document names to S3 keys
       const documentLookup = new Map(documents.map(d => [d.originalName, d.s3Key]));
 
-      // 3. AI Analysis with page type classification
-      this.emitStatus('Processing with AI...', 30);
-      const aiResult = await aiService.analyzePageAndMapFields(
-        cleaned, 
-        extraction.extractedData,
-        documentList,
-        customPrompt
-      );
-      this.emitStatus(`Got AI response: ${aiResult.pageType} page`, 50);
+      // Create StateExplorer and configure it
+      this.emitStatus('Starting iterative exploration...', 20);
+      this.stateExplorer = new StateExplorer(page, {
+        maxIterations: 100, // Allow more iterations for complex SPAs
+        iterationDelay: 500,
+        domChangeTimeout: 3000,
+      });
+      
+      // Set mode and context
+      this.stateExplorer.setMode(this.automationMode);
+      this.stateExplorer.setContext(extraction.extractedData as Record<string, unknown>, documentList, documentLookup);
 
-      logger.info(`Page classified as: ${aiResult.pageType} - ${aiResult.pageSummary}`);
-
-      // 4. Route based on page type
-      if (aiResult.pageType === 'dashboard' || !aiResult.isFormPage) {
-        await this.processDashboardPage(pageManager, aiResult, client, extraction, portalUrl, customPrompt);
-      } else {
-        await this.processFormPage(pageManager, aiResult, client, extraction, portalUrl, customPrompt, documentLookup);
+      // Run the iterative exploration loop
+      // This will: Observe HTML → Ask AI for SINGLE next action → Execute → Repeat
+      logger.info('Starting StateExplorer loop');
+      const explorationResult = await this.stateExplorer.runExplorationLoop();
+      
+      logger.info(`Exploration complete: ${explorationResult.totalFieldsFilled} fields filled`);
+      
+      if (explorationResult.isComplete) {
+        this.emitStatus('Page exploration complete', 90);
+        
+        // Check if we should proceed to next page or finish
+        if (this.isRunning && !this.isPaused) {
+          // Wait for any navigation and continue
+          await new Promise(r => setTimeout(r, 2000));
+          
+          // The page might have navigated - check if we need to continue
+          // For now, mark as complete if exploration finished successfully
+          this.emitStatus('Automation complete', 100);
+          this.emitJobCompleted(true);
+        }
+      } else if (explorationResult.errorMessage) {
+        logger.error(`Exploration failed: ${explorationResult.errorMessage}`);
+        this.emitStatus(`Error: ${explorationResult.errorMessage}`, 0);
       }
 
     } catch (error: any) {
@@ -633,10 +657,25 @@ export class AutomationService {
     this.pause('error');
   }
 
-  // Iterative Exploration Mode Methods
+  private emitJobCompleted(success: boolean) {
+    const wm = getWindowManager();
+    const win = wm?.getMainWindow();
+    win?.webContents.send(IPC_CHANNELS.EVENT_JOB_COMPLETED, { 
+      jobId: this.currentJob?._id, 
+      success 
+    });
+    
+    // Update job status in database
+    if (this.currentJob) {
+      automationJobRepository.update(
+        this.currentJob._id.toString(),
+        this.currentJob.companyId,
+        { status: success ? 'completed' : 'failed' }
+      ).catch(err => logger.error('Failed to update job status:', err));
+    }
+  }
 
-  private automationMode: 'auto' | 'manual' = 'auto';
-  private stateExplorer: import('./automation/state-explorer').StateExplorer | null = null;
+  // Iterative Exploration Mode Methods
 
   /**
    * Set automation mode (auto/manual)

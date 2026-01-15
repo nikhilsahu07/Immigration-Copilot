@@ -81,7 +81,7 @@ export const geminiPromptLogger = winston.createLogger({
   }),
   transports: [
     new winston.transports.File({
-      filename: path.join(logDir, 'gemini_prompt.logs'),
+      filename: path.join(logDir, 'gemini_prompt.log'),
       maxsize: 10 * 1024 * 1024,
       maxFiles: 3,
     }),

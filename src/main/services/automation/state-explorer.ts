@@ -52,6 +52,7 @@ export class StateExplorer {
   private isRunning: boolean = false;
   private extractedData: Record<string, unknown> = {};
   private documentList: { name: string; category: string }[] = [];
+  private documentLookup: Map<string, string> = new Map();
 
   constructor(
     private page: Page,
@@ -89,10 +90,12 @@ export class StateExplorer {
    */
   setContext(
     extractedData: Record<string, unknown>,
-    documentList: { name: string; category: string }[]
+    documentList: { name: string; category: string }[],
+    documentLookup: Map<string, string> = new Map()
   ): void {
     this.extractedData = extractedData;
     this.documentList = documentList;
+    this.documentLookup = documentLookup;
   }
 
   /**
@@ -308,7 +311,7 @@ export class StateExplorer {
         fieldLabel: documentName,
         fieldType: 'file',
         selector: selector,
-        value: documentName, // The file filler will resolve this to S3 key
+        value: this.documentLookup.get(documentName) || documentName, // Resolve S3 key
         confidence: 'high',
         reasoning: 'AI exploration upload',
       }]);

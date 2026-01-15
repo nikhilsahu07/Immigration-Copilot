@@ -26,6 +26,11 @@ const envSchema = z.object({
   GEMINI_API_KEY: z.string().min(1, 'Gemini API Key is required'),
   GEMINI_MODEL: z.string().default('gemini-3-flash-preview'),
 
+  // LLM Provider
+  LLM_PROVIDER: z.enum(['gemini', 'local']).default('gemini'),
+  OLLAMA_MODEL: z.string().default('qwen2.5:0.5b'),
+  OLLAMA_URL: z.string().default('http://localhost:11434'),
+
   // App settings
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
