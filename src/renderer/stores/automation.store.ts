@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api } from '../lib/api';
-import type { FormMapping, AutomationJob, CreateJobInput } from '../../shared/types';
+import type { FormMapping, AutomationJob, CreateJobInput, AutomationMode, AutomationPhase, ExplorationState, PendingAction } from '../../shared/types';
 
 interface AutomationStoreState {
   // State
@@ -18,6 +18,15 @@ interface AutomationStoreState {
   isLoading: boolean;
   error: string | null;
   
+  // New: Iterative Exploration State
+  automationMode: AutomationMode;
+  explorationState: ExplorationState | null;
+  pendingAction: PendingAction | null;
+  
+  // New: Phase tracking for pause/resume
+  currentPhase: AutomationPhase;
+  pausedAtPhase: AutomationPhase | null;
+  
   // Actions
   startAutomation: (data: CreateJobInput) => Promise<boolean>;
   stopAutomation: () => Promise<void>;
@@ -32,6 +41,11 @@ interface AutomationStoreState {
   hidePreview: () => Promise<void>;
   closeBrowser: () => Promise<void>;
   
+  // New: Mode Control
+  setAutomationMode: (mode: AutomationMode) => Promise<void>;
+  approveAction: () => Promise<void>;
+  rejectAction: () => Promise<void>;
+  
   // Internal
   setStatus: (message: string, progress: number) => void;
   setMapping: (mapping: FormMapping) => void;
@@ -39,6 +53,8 @@ interface AutomationStoreState {
   setOtp: (selector: string) => void;
   setJobCompleted: (success: boolean) => void;
   setPage: (page: number, total: number) => void;
+  setExplorationState: (state: ExplorationState) => void;
+  setPendingAction: (action: PendingAction | null) => void;
   reset: () => void;
   clearError: () => void;
 }
@@ -57,6 +73,13 @@ const initialState = {
   otpFieldSelector: null,
   isLoading: false,
   error: null,
+  // New
+  automationMode: 'auto' as AutomationMode,
+  explorationState: null,
+  pendingAction: null,
+  // Phase tracking
+  currentPhase: 'idle' as AutomationPhase,
+  pausedAtPhase: null as AutomationPhase | null,
 };
 
 export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
@@ -237,6 +260,39 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
     statusMessage: `Processing page ${page} of ${total}`,
     progress: Math.round((page / total) * 100),
   }),
+  
+  // New: Exploration state setters
+  setExplorationState: (state) => set({ explorationState: state }),
+  setPendingAction: (action) => set({ pendingAction: action }),
+  
+  // New: Mode control actions
+  setAutomationMode: async (mode) => {
+    try {
+      await api.automation.setMode({ mode });
+      set({ automationMode: mode });
+    } catch {
+      set({ error: 'Failed to set automation mode' });
+    }
+  },
+  
+  approveAction: async () => {
+    try {
+      await api.automation.approveAction();
+      set({ pendingAction: null });
+    } catch {
+      set({ error: 'Failed to approve action' });
+    }
+  },
+  
+  rejectAction: async () => {
+    try {
+      await api.automation.rejectAction();
+      set({ pendingAction: null });
+    } catch {
+      set({ error: 'Failed to reject action' });
+    }
+  },
+  
   reset: () => set(initialState),
   clearError: () => set({ error: null }),
 }));
@@ -265,5 +321,14 @@ if (typeof window !== 'undefined' && window.electronAPI) {
 
   api.events.onPageChanged((data) => {
     useAutomationStore.getState().setPage(data.page, data.total);
+  });
+  
+  // New: Exploration events
+  api.events.onExplorationState?.((data: ExplorationState) => {
+    useAutomationStore.getState().setExplorationState(data);
+  });
+  
+  api.events.onActionPending?.((data: PendingAction) => {
+    useAutomationStore.getState().setPendingAction(data);
   });
 }

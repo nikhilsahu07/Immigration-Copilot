@@ -156,7 +156,10 @@ export class PageManager {
     return providedType || 'text';
   }
 
-  async fillForm(fields: AutomatedField[]): Promise<void> {
+  async fillForm(fields: AutomatedField[]): Promise<{ filledCount: number; failedFields: AutomatedField[] }> {
+      const failedFields: AutomatedField[] = [];
+      let filledCount = 0;
+      
       for (const field of fields) {
           if (!field.value) continue;
 
@@ -171,12 +174,58 @@ export class PageManager {
           const success = await filler.fill({ ...field, fieldType: actualFieldType });
           
           if (!success) {
-              logger.warn(`Skipped field ${field.fieldLabel} (${field.selector})`);
+              failedFields.push({ ...field, fieldType: actualFieldType });
+              logger.warn(`First attempt failed for ${field.fieldLabel} (${field.selector})`);
+          } else {
+              filledCount++;
           }
           
           // Small delay for realism
           await this.page.waitForTimeout(200);
       }
+      
+      // RETRY: Attempt failed fields again with alternative strategies
+      const stillFailed: AutomatedField[] = [];
+      for (const field of failedFields) {
+          logger.info(`Retrying field: ${field.fieldLabel}`);
+          
+          // Try alternative strategies
+          let retrySuccess = false;
+          
+          // Strategy 1: Try with a shorter timeout and force visibility
+          try {
+              await this.page.waitForTimeout(500); // Give DOM time to stabilize
+              const filler = this.fillers[field.fieldType] || this.fillers['text'];
+              retrySuccess = await filler.fill(field);
+          } catch (e) {
+              logger.debug(`Retry strategy 1 failed for ${field.fieldLabel}:`, e);
+          }
+          
+          // Strategy 2: Try to find element by label text and fill
+          if (!retrySuccess && field.fieldLabel) {
+              try {
+                  const labelLocator = this.page.getByLabel(field.fieldLabel, { exact: false });
+                  if (await labelLocator.count() > 0) {
+                      await labelLocator.first().fill(String(field.value));
+                      retrySuccess = true;
+                      logger.info(`Retry by label succeeded for ${field.fieldLabel}`);
+                  }
+              } catch (e) {
+                  logger.debug(`Retry by label failed for ${field.fieldLabel}:`, e);
+              }
+          }
+          
+          if (retrySuccess) {
+              filledCount++;
+              logger.info(`Retry succeeded for ${field.fieldLabel}`);
+          } else {
+              stillFailed.push(field);
+              logger.warn(`All retries failed for ${field.fieldLabel} (${field.selector})`);
+          }
+      }
+      
+      logger.info(`Form fill complete: ${filledCount}/${fields.length} succeeded, ${stillFailed.length} failed`);
+      return { filledCount, failedFields: stillFailed };
   }
 
   // Find and click the submit/next button in the form
@@ -426,6 +475,219 @@ export class PageManager {
     } catch (error) {
       logger.debug(`clickByText failed for "${text}":`, error);
       return false;
+    }
+  }
+
+  // ============================================
+  // SPA Exploration Utilities
+  // ============================================
+
+  /**
+   * Wait for DOM changes after a click action.
+   * Uses both load state and a small delay for React/Vue re-renders.
+   */
+  async waitForDOMChange(timeout: number = 2000): Promise<boolean> {
+    try {
+      // Wait for network to be idle or the DOM to be content loaded
+      await Promise.race([
+        this.page.waitForLoadState('domcontentloaded', { timeout }),
+        this.page.waitForLoadState('networkidle', { timeout }),
+      ]);
+      
+      // Additional delay for framework re-renders (React, Vue, etc.)
+      await this.page.waitForTimeout(300);
+      
+      return true;
+    } catch {
+      // Timeout is acceptable - page may not have navigated
+      await this.page.waitForTimeout(300);
+      return false;
+    }
+  }
+
+  /**
+   * Extract HTML content scoped to a modal element.
+   * Useful for focusing AI vision on modal content only.
+   */
+  async extractModalContent(modalSelector?: string): Promise<string | null> {
+    try {
+      // Common modal selectors to try if none provided
+      const selectors = modalSelector 
+        ? [modalSelector]
+        : [
+          '[role="dialog"]',
+          '[aria-modal="true"]',
+          '.modal[style*="display: block"]',
+          '.modal.show',
+          '.MuiDialog-root',
+          '.ReactModal__Content',
+          '[data-testid="modal"]',
+        ];
+
+      for (const selector of selectors) {
+        const modal = await this.page.$(selector);
+        if (modal && await modal.isVisible()) {
+          const modalHtml = await modal.innerHTML();
+          logger.info(`Extracted modal content from: ${selector}`);
+          return cleanHtml(modalHtml);
+        }
+      }
+
+      return null;
+    } catch (error) {
+      logger.error('Failed to extract modal content:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Detect interactive elements on the page that might reveal more form fields.
+   * Returns tabs, accordions, and "Add" buttons.
+   */
+  async detectInteractiveElements(): Promise<{
+    tabs: { selector: string; label: string; isActive: boolean }[];
+    accordions: { selector: string; label: string; isExpanded: boolean }[];
+    addButtons: { selector: string; label: string }[];
+  }> {
+    return await this.page.evaluate(() => {
+      const result: {
+        tabs: { selector: string; label: string; isActive: boolean }[];
+        accordions: { selector: string; label: string; isExpanded: boolean }[];
+        addButtons: { selector: string; label: string }[];
+      } = {
+        tabs: [],
+        accordions: [],
+        addButtons: [],
+      };
+
+      // Helper to create stable selector
+      function getStableSelector(el: Element): string {
+        if (el.id) return `#${el.id}`;
+        if (el.getAttribute('name')) return `[name="${el.getAttribute('name')}"]`;
+        if (el.getAttribute('aria-label')) return `[aria-label="${el.getAttribute('aria-label')}"]`;
+        if (el.getAttribute('data-testid')) return `[data-testid="${el.getAttribute('data-testid')}"]`;
+        // Fallback to role + text
+        const role = el.getAttribute('role');
+        const text = el.textContent?.trim().slice(0, 30);
+        if (role && text) return `[role="${role}"]`;
+        return '';
+      }
+
+      // Detect tabs
+      const tabElements = document.querySelectorAll('[role="tab"], .nav-tabs .nav-link, .tab-button');
+      tabElements.forEach(tab => {
+        const selector = getStableSelector(tab);
+        if (selector) {
+          result.tabs.push({
+            selector,
+            label: tab.textContent?.trim() || '',
+            isActive: tab.getAttribute('aria-selected') === 'true' || tab.classList.contains('active'),
+          });
+        }
+      });
+
+      // Detect accordions
+      const accordionHeaders = document.querySelectorAll(
+        '[data-toggle="collapse"], .accordion-button, [aria-expanded]'
+      );
+      accordionHeaders.forEach(header => {
+        const selector = getStableSelector(header);
+        if (selector) {
+          result.accordions.push({
+            selector,
+            label: header.textContent?.trim() || '',
+            isExpanded: header.getAttribute('aria-expanded') === 'true',
+          });
+        }
+      });
+
+      // Detect "Add" buttons (common pattern in forms)
+      const addButtonPatterns = [
+        'button:not([type="submit"])',
+        '[class*="add"]',
+        '[class*="Add"]',
+      ];
+      const allButtons = document.querySelectorAll('button');
+      allButtons.forEach(btn => {
+        const text = btn.textContent?.toLowerCase() || '';
+        if (text.includes('add') || text.includes('new') || text.includes('+')) {
+          const selector = getStableSelector(btn);
+          if (selector) {
+            result.addButtons.push({
+              selector,
+              label: btn.textContent?.trim() || '',
+            });
+          }
+        }
+      });
+
+      return result;
+    });
+  }
+
+  /**
+   * Execute click with exponential backoff retry.
+   * Useful for SPA elements that may not be immediately clickable.
+   */
+  async executeClickWithRetry(
+    selector: string, 
+    description: string,
+    maxRetries: number = 3
+  ): Promise<boolean> {
+    let delay = 500;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const success = await this.executeClick(selector, description);
+      
+      if (success) {
+        return true;
+      }
+      
+      if (attempt < maxRetries) {
+        logger.debug(`Click attempt ${attempt} failed, retrying in ${delay}ms...`);
+        await this.page.waitForTimeout(delay);
+        delay *= 2; // Exponential backoff
+      }
+    }
+    
+    logger.warn(`All ${maxRetries} click attempts failed for: ${selector}`);
+    return false;
+  }
+
+  /**
+   * Get content of a specific tab panel by clicking the tab first.
+   */
+  async getTabPanelContent(tabSelector: string): Promise<string | null> {
+    try {
+      // Click the tab
+      const clicked = await this.executeClick(tabSelector, 'Switch to tab');
+      if (!clicked) {
+        return null;
+      }
+
+      // Wait for content to load
+      await this.waitForDOMChange(2000);
+
+      // Extract the panel content
+      // Try to find associated panel via aria-controls
+      const panelId = await this.page.evaluate((sel) => {
+        const tab = document.querySelector(sel);
+        return tab?.getAttribute('aria-controls');
+      }, tabSelector);
+
+      if (panelId) {
+        const panel = await this.page.$(`#${panelId}`);
+        if (panel) {
+          const html = await panel.innerHTML();
+          return cleanHtml(html);
+        }
+      }
+
+      // Fallback: return full page content
+      return await this.extractHtml();
+    } catch (error) {
+      logger.error('Failed to get tab panel content:', error);
+      return null;
     }
   }
 }

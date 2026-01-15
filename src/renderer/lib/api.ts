@@ -26,6 +26,9 @@ import type {
   AgentPublic,
   CreateAgentInput,
   UpdateAgentInput,
+  AutomationMode,
+  ExplorationState,
+  PendingAction,
 } from '../../shared/types';
 
 export interface DashboardStats {
@@ -124,6 +127,10 @@ export interface ElectronAPI {
     executeAction: (data: { actionIndex: number }) => Promise<Result<void>>;
     getState: () => Promise<Result<AutomationState>>;
     getHistory: (params: PaginationParams) => Promise<Result<PaginatedResult<AutomationJob>>>;
+    // New: Iterative Exploration
+    setMode: (data: { mode: AutomationMode }) => Promise<Result<void>>;
+    approveAction: () => Promise<Result<void>>;
+    rejectAction: () => Promise<Result<void>>;
   };
   browserView: {
     load: (data: { url: string }) => Promise<Result<void>>;
@@ -139,6 +146,9 @@ export interface ElectronAPI {
     onOtpRequired: (callback: (data: { fieldSelector: string }) => void) => () => void;
     onJobCompleted: (callback: (data: { jobId: string; success: boolean }) => void) => () => void;
     onPageChanged: (callback: (data: { page: number; total: number }) => void) => () => void;
+    // New: Exploration events
+    onExplorationState: (callback: (data: ExplorationState) => void) => () => void;
+    onActionPending: (callback: (data: PendingAction) => void) => () => void;
   };
 }
 

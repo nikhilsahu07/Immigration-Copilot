@@ -103,6 +103,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     executeAction: createInvoker(IPC_CHANNELS.AUTOMATION_EXECUTE_ACTION),
     getState: createInvoker(IPC_CHANNELS.AUTOMATION_GET_STATE),
     getHistory: createInvoker(IPC_CHANNELS.AUTOMATION_GET_HISTORY),
+    // New: Iterative Exploration
+    setMode: createInvoker(IPC_CHANNELS.AUTOMATION_SET_MODE),
+    approveAction: createInvoker(IPC_CHANNELS.AUTOMATION_APPROVE_ACTION),
+    rejectAction: createInvoker(IPC_CHANNELS.AUTOMATION_REJECT_ACTION),
   },
 
   // BrowserView
@@ -122,6 +126,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onOtpRequired: createListener(IPC_CHANNELS.EVENT_OTP_REQUIRED),
     onJobCompleted: createListener(IPC_CHANNELS.EVENT_JOB_COMPLETED),
     onPageChanged: createListener(IPC_CHANNELS.EVENT_PAGE_CHANGED),
+    // New: Exploration events
+    onExplorationState: createListener(IPC_CHANNELS.EVENT_EXPLORATION_STATE),
+    onActionPending: createListener(IPC_CHANNELS.EVENT_ACTION_PENDING),
   },
 });
 

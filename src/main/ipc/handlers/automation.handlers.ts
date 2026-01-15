@@ -101,6 +101,43 @@ export function registerAutomationHandlers(): void {
       return handleError(error);
     }
   });
+
+  // ============================================
+  // Iterative Exploration Handlers
+  // ============================================
+
+  // Set Automation Mode (auto/manual)
+  ipcMain.handle(IPC_CHANNELS.AUTOMATION_SET_MODE, async (_event, { mode }) => {
+    try {
+      automationService.setMode(mode);
+      return success(undefined);
+    } catch (error) {
+      logger.error('Set automation mode error:', error);
+      return handleError(error);
+    }
+  });
+
+  // Approve pending action (manual mode)
+  ipcMain.handle(IPC_CHANNELS.AUTOMATION_APPROVE_ACTION, async () => {
+    try {
+      automationService.approveAction();
+      return success(undefined);
+    } catch (error) {
+      logger.error('Approve action error:', error);
+      return handleError(error);
+    }
+  });
+
+  // Reject pending action (manual mode)
+  ipcMain.handle(IPC_CHANNELS.AUTOMATION_REJECT_ACTION, async () => {
+    try {
+      automationService.rejectAction();
+      return success(undefined);
+    } catch (error) {
+      logger.error('Reject action error:', error);
+      return handleError(error);
+    }
+  });
   
   logger.debug('Automation handlers registered');
 }
