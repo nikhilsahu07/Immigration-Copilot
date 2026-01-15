@@ -8,6 +8,9 @@ export interface Portal extends BaseEntity, WithCompany, WithAgent {
   isActive: boolean;
   category?: PortalCategory;
   metadata?: PortalMetadata;
+  // Adapter-related fields
+  adapterSlug?: string;        // Links to registered adapter
+  hasCustomAdapter?: boolean;  // Quick check for UI
 }
 
 export type PortalCategory = 
@@ -42,4 +45,6 @@ export interface UpdatePortalInput {
   isActive?: boolean;
   category?: PortalCategory;
   metadata?: PortalMetadata;
+  adapterSlug?: string;
+  hasCustomAdapter?: boolean;
 }

@@ -67,6 +67,7 @@ export const IPC_CHANNELS = {
   AUTOMATION_RESUME_AFTER_CAPTCHA: 'automation:resume-after-captcha',
   AUTOMATION_EXECUTE_ACTION: 'automation:execute-action',
   AUTOMATION_GET_STATE: 'automation:get-state',
+  AUTOMATION_CHECK_ADAPTER: 'automation:check-adapter',
   AUTOMATION_GET_HISTORY: 'automation:get-history',
 
   // BrowserView

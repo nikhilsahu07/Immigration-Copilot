@@ -113,6 +113,31 @@ export function registerAutomationHandlers(): void {
       return handleError(error);
     }
   });
+
+  // Check Adapter Availability for a portal
+  ipcMain.handle(IPC_CHANNELS.AUTOMATION_CHECK_ADAPTER, async (_event, { portalId }) => {
+    try {
+      const session = getCurrentSession();
+      if (!session) throw new Error('Unauthorized');
+      
+      const { portalRepository } = await import('../../database/repositories');
+      const { adapterRegistry } = await import('../../adapters');
+      
+      const portal = await portalRepository.findById(portalId, session.companyId);
+      if (!portal) {
+        return success({ hasAdapter: false, adapterSlug: null });
+      }
+      
+      const hasAdapter = portal.adapterSlug ? adapterRegistry.has(portal.adapterSlug) : false;
+      return success({ 
+        hasAdapter, 
+        adapterSlug: portal.adapterSlug || null 
+      });
+    } catch (error) {
+      logger.error('Check adapter error:', error);
+      return handleError(error);
+    }
+  });
   
   logger.debug('Automation handlers registered');
 }

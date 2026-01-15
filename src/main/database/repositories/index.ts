@@ -9,4 +9,5 @@ export { automationJobRepository } from './automation-job.repository';
 export { auditLogRepository, type AuditLog, type AuditAction } from './audit-log.repository';
 export { chatRepository, type ChatMessage, type CreateChatInput } from './chat.repository';
 export { sessionRepository } from './session.repository';
+export { adapterFailureRepository } from './adapter-failure.repository';
 

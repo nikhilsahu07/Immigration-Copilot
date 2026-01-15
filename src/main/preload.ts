@@ -103,6 +103,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     executeAction: createInvoker(IPC_CHANNELS.AUTOMATION_EXECUTE_ACTION),
     setMode: createInvoker(IPC_CHANNELS.AUTOMATION_SET_MODE),
     getState: createInvoker(IPC_CHANNELS.AUTOMATION_GET_STATE),
+    checkAdapter: createInvoker(IPC_CHANNELS.AUTOMATION_CHECK_ADAPTER),
     getHistory: createInvoker(IPC_CHANNELS.AUTOMATION_GET_HISTORY),
   },
 

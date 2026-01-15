@@ -5,7 +5,9 @@ import {
   AutomationState,
   Client,
   Extraction,
-  PauseReason
+  PauseReason,
+  AdapterMode,
+  ExecutionMode
 } from '../../shared/types';
 import { 
   automationJobRepository, 
@@ -13,7 +15,8 @@ import {
   portalRepository, 
   extractionRepository,
   documentRepository,
-  chatRepository
+  chatRepository,
+  adapterFailureRepository
 } from '../database/repositories';
 import { logger } from '../core/logger';
 import { createError } from '../core/error-handler';
@@ -26,12 +29,41 @@ import { PageManager } from '../automation/page-manager';
 import { aiService } from './ai.service';
 import type { AutomatedField } from '../automation/fillers/base-filler';
 
+// Adapter system imports
+import { 
+  adapterRegistry, 
+  aiAdapter, 
+  registerPortalAdapters,
+  AdapterLogHelper,
+  adapterLogger
+} from '../adapters';
+import type { AdapterContext, DocumentInfo } from '../adapters/types';
+
 export class AutomationService {
   private currentJob: AutomationJob | null = null;
   private currentMapping: FormMapping | null = null;
   private isRunning: boolean = false;
   private isPaused: boolean = false;
+<<<<<<< HEAD
   private mode: 'auto' | 'manual' = 'manual';
+=======
+  
+  // Adapter mode settings
+  private adapterMode: AdapterMode = 'custom';     // 'custom' or 'ai'
+  private executionMode: ExecutionMode = 'manual'; // 'auto' or 'manual'
+  private adapterLogger: AdapterLogHelper | null = null;
+  
+  // Track if adapters are registered
+  private adaptersRegistered: boolean = false;
+
+  private ensureAdaptersRegistered(): void {
+    if (!this.adaptersRegistered) {
+      registerPortalAdapters();
+      this.adaptersRegistered = true;
+      logger.info('Portal adapters registered');
+    }
+  }
+>>>>>>> 4aea923 (adapter-registry methods with fallback to ai automation)
 
   async start(
     companyId: string, 
@@ -39,6 +71,15 @@ export class AutomationService {
     input: CreateJobInput
   ): Promise<AutomationJob> {
     logger.info(`Starting automation for client ${input.clientId}`);
+    
+    // Ensure adapters are registered
+    this.ensureAdaptersRegistered();
+
+    // Set adapter and execution modes from input (with defaults)
+    this.adapterMode = input.adapterMode ?? 'custom';
+    this.executionMode = input.executionMode ?? 'manual';
+    
+    logger.info(`Adapter mode: ${this.adapterMode}, Execution mode: ${this.executionMode}`);
 
     // 1. Verify resources exist
     const [client, portal, extraction] = await Promise.all([
@@ -51,10 +92,27 @@ export class AutomationService {
     if (!portal) throw createError(ERROR_CODES.PORTAL_NOT_FOUND, 'Portal not found');
     if (!extraction) throw createError(ERROR_CODES.EXTRACTION_NOT_FOUND);
 
-    // 2. Create Job in DB
+    // Check if custom adapter is available for this portal
+    const hasCustomAdapter = portal.adapterSlug ? adapterRegistry.has(portal.adapterSlug) : false;
+    
+    // If custom mode is requested but no adapter exists, warn and continue (will use custom logic first, then AI fallback)
+    if (this.adapterMode === 'custom' && !hasCustomAdapter && portal.adapterSlug) {
+      logger.warn(`Custom adapter requested but not found for portal: ${portal.adapterSlug}`);
+    }
+
+    // 2. Create Job in DB with mode settings
     const job = await automationJobRepository.create(companyId, agentId, {
       ...input,
+      adapterMode: this.adapterMode,
+      executionMode: this.executionMode,
     });
+
+    // Setup adapter logger for this job
+    this.adapterLogger = new AdapterLogHelper(
+      portal.adapterSlug || 'no-adapter',
+      job._id.toString(),
+      portal._id
+    );
 
     // 2.5 Save custom prompt to chat history if present
     if (input.customPrompt) {
@@ -550,6 +608,13 @@ export class AutomationService {
   }
 
   async getState(): Promise<AutomationState> {
+    // Check if current portal has a custom adapter
+    let hasCustomAdapter = false;
+    if (this.currentJob) {
+      const portal = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
+      hasCustomAdapter = portal?.adapterSlug ? adapterRegistry.has(portal.adapterSlug) : false;
+    }
+
     return {
       isRunning: this.isRunning,
       currentJob: this.currentJob || undefined,
@@ -559,7 +624,15 @@ export class AutomationService {
       needsApproval: !!this.currentMapping,
       captchaDetected: false,
       otpDetected: false,
+<<<<<<< HEAD
       mode: this.mode,
+=======
+      // Adapter-related state
+      adapterMode: this.adapterMode,
+      executionMode: this.executionMode,
+      currentAdapter: this.currentJob?.adapterSlug,
+      hasCustomAdapter,
+>>>>>>> 4aea923 (adapter-registry methods with fallback to ai automation)
     };
   }
 

@@ -17,6 +17,8 @@ export class AutomationJobRepository {
       portalId: input.portalId,
       extractionId: input.extractionId,
       customPrompt: input.customPrompt,
+      adapterMode: input.adapterMode ?? 'custom',
+      executionMode: input.executionMode ?? 'manual',
       status: 'queued',
       currentPage: 0,
       totalPages: 0,

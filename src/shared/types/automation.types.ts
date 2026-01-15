@@ -1,4 +1,5 @@
 import { BaseEntity, WithCompany, WithAgent } from './common.types';
+import { AdapterMode, ExecutionMode } from './adapter.types';
 
 export type JobStatus = 
   | 'queued'
@@ -30,6 +31,11 @@ export interface AutomationJob extends BaseEntity, WithCompany, WithAgent {
   startedAt?: Date;
   completedAt?: Date;
   duration?: number;
+  // Adapter-related fields
+  adapterMode: AdapterMode;       // 'custom' or 'ai'
+  executionMode: ExecutionMode;   // 'auto' or 'manual'
+  adapterSlug?: string;           // Which adapter was used
+  fellBackToAI?: boolean;         // Did custom adapter fall back?
 }
 
 export interface PageProcessed {
@@ -119,6 +125,8 @@ export interface CreateJobInput {
   portalId: string;
   extractionId: string;
   customPrompt?: string;
+  adapterMode?: AdapterMode;     // 'custom' or 'ai'
+  executionMode?: ExecutionMode; // 'auto' or 'manual'
 }
 
 export interface UpdateJobInput {
@@ -138,7 +146,15 @@ export interface AutomationState {
   needsApproval: boolean;
   captchaDetected: boolean;
   otpDetected: boolean;
+<<<<<<< HEAD
   mode?: 'auto' | 'manual';
+=======
+  // Adapter-related state
+  adapterMode: AdapterMode;
+  executionMode: ExecutionMode;
+  currentAdapter?: string;        // Slug of current adapter
+  hasCustomAdapter?: boolean;     // Does selected portal have adapter?
+>>>>>>> 4aea923 (adapter-registry methods with fallback to ai automation)
 }
 
 export interface CaptchaDetection {

@@ -118,6 +118,27 @@ async function createIndexes(db: Db): Promise<void> {
       { key: { expiresAt: 1 }, expireAfterSeconds: 0 }, // TTL index
     ]);
 
+    // AI Automation Failures indexes
+    await db.collection('ai_automation_failures').createIndexes([
+      { key: { companyId: 1 } },
+      { key: { portalId: 1 } },
+      { key: { jobId: 1 } },
+      { key: { clientId: 1 } },
+      { key: { createdAt: -1 } },
+      { key: { failureType: 1 } },
+    ]);
+
+    // Custom Adapter Failures indexes
+    await db.collection('custom_adapter_failures').createIndexes([
+      { key: { companyId: 1 } },
+      { key: { portalId: 1 } },
+      { key: { adapterSlug: 1 } },
+      { key: { jobId: 1 } },
+      { key: { clientId: 1 } },
+      { key: { createdAt: -1 } },
+      { key: { failureType: 1 } },
+    ]);
+
     logger.info('Database indexes created successfully');
   } catch (error) {
     logger.error('Failed to create indexes:', error);
@@ -125,7 +146,6 @@ async function createIndexes(db: Db): Promise<void> {
   }
 }
 
-// Collection names
 export const COLLECTIONS = {
   COMPANIES: 'companies',
   AGENTS: 'agents',
@@ -137,4 +157,6 @@ export const COLLECTIONS = {
   AUDIT_LOGS: 'audit_logs',
   CHATS: 'chats',
   SESSIONS: 'sessions',
+  AI_AUTOMATION_FAILURES: 'ai_automation_failures',
+  CUSTOM_ADAPTER_FAILURES: 'custom_adapter_failures',
 } as const;

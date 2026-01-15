@@ -9,3 +9,4 @@ export * from './portal.types';
 export * from './automation.types';
 export * from './ipc-contracts.types';
 export * from './gemini.types';
+export * from './adapter.types';

@@ -3,7 +3,7 @@ import { Play, Pause, Square, AlertTriangle, KeyRound, CheckCircle, Loader2, Glo
 import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label, Progress, Textarea } from '../../components/ui';
 import { useAutomationStore, useClientStore, usePortalStore } from '../../stores';
 import { api, ChatMessage } from '../../lib/api';
-import type { Extraction } from '../../../shared/types';
+import type { Extraction, AdapterMode, ExecutionMode } from '../../../shared/types';
 
 export function AutomationPage() {
   const {
@@ -43,6 +43,12 @@ export function AutomationPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
+  
+  // Adapter mode settings
+  const [adapterMode, setAdapterMode] = useState<AdapterMode>('custom');
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>('manual');
+  const [hasCustomAdapter, setHasCustomAdapter] = useState(false);
+  const [checkingAdapter, setCheckingAdapter] = useState(false);
 
   useEffect(() => {
     fetchClients();
@@ -90,6 +96,35 @@ export function AutomationPage() {
     }
   }, [selectedPortal]);
 
+  // Check adapter availability when portal changes
+  useEffect(() => {
+    const checkAdapter = async () => {
+      if (!selectedPortal) {
+        setHasCustomAdapter(false);
+        return;
+      }
+      
+      setCheckingAdapter(true);
+      try {
+        const result = await api.automation.checkAdapter({ portalId: selectedPortal });
+        if (result.success && result.data) {
+          setHasCustomAdapter(result.data.hasAdapter);
+          // If no custom adapter, force AI mode
+          if (!result.data.hasAdapter) {
+            setAdapterMode('ai');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check adapter:', error);
+        setHasCustomAdapter(false);
+      } finally {
+        setCheckingAdapter(false);
+      }
+    };
+    
+    checkAdapter();
+  }, [selectedPortal]);
+
   const loadApprovedExtraction = async (clientId: string) => {
     setLoadingExtraction(true);
     try {
@@ -116,6 +151,8 @@ export function AutomationPage() {
       portalId: selectedPortal,
       extractionId: approvedExtraction._id,
       customPrompt: customPrompt || undefined,
+      adapterMode,
+      executionMode,
     });
   };
 
@@ -266,6 +303,103 @@ export function AutomationPage() {
                 )}
               </div>
 
+<<<<<<< HEAD
+=======
+              {/* Mode Toggles - Show after portal is selected */}
+              {selectedPortal && (
+                <div className="space-y-4 p-3 rounded-lg bg-muted/50 border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Bot className="w-4 h-4" />
+                    <span className="text-sm font-medium">Automation Mode</span>
+                    {checkingAdapter && <Loader2 className="w-3 h-3 animate-spin" />}
+                  </div>
+                  
+                  {/* Adapter Mode Toggle */}
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Adapter Mode</Label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setAdapterMode('custom')}
+                        disabled={!hasCustomAdapter}
+                        className={`flex-1 px-3 py-2 text-sm rounded-md border transition-colors ${
+                          adapterMode === 'custom' 
+                            ? 'bg-primary text-primary-foreground border-primary' 
+                            : 'bg-background hover:bg-muted border-input'
+                        } ${!hasCustomAdapter ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <div className="flex items-center justify-center gap-2">
+                          <Sparkles className="w-3 h-3" />
+                          Custom Script
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => setAdapterMode('ai')}
+                        className={`flex-1 px-3 py-2 text-sm rounded-md border transition-colors ${
+                          adapterMode === 'ai' 
+                            ? 'bg-primary text-primary-foreground border-primary' 
+                            : 'bg-background hover:bg-muted border-input'
+                        }`}
+                      >
+                        <div className="flex items-center justify-center gap-2">
+                          <Bot className="w-3 h-3" />
+                          AI Mode
+                        </div>
+                      </button>
+                    </div>
+                    {!hasCustomAdapter && (
+                      <p className="text-xs text-yellow-600">
+                        No custom adapter for this portal. Using AI mode.
+                      </p>
+                    )}
+                    {hasCustomAdapter && adapterMode === 'custom' && (
+                      <p className="text-xs text-green-600">
+                        Custom script available for faster, more reliable automation.
+                      </p>
+                    )}
+                  </div>
+                  
+                  {/* Execution Mode Toggle */}
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Execution Mode</Label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setExecutionMode('manual')}
+                        className={`flex-1 px-3 py-2 text-sm rounded-md border transition-colors ${
+                          executionMode === 'manual' 
+                            ? 'bg-primary text-primary-foreground border-primary' 
+                            : 'bg-background hover:bg-muted border-input'
+                        }`}
+                      >
+                        <div className="flex items-center justify-center gap-2">
+                          <CheckCircle className="w-3 h-3" />
+                          Manual
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => setExecutionMode('auto')}
+                        className={`flex-1 px-3 py-2 text-sm rounded-md border transition-colors ${
+                          executionMode === 'auto' 
+                            ? 'bg-primary text-primary-foreground border-primary' 
+                            : 'bg-background hover:bg-muted border-input'
+                        }`}
+                      >
+                        <div className="flex items-center justify-center gap-2">
+                          <Play className="w-3 h-3" />
+                          Auto
+                        </div>
+                      </button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {executionMode === 'manual' 
+                        ? 'Approval required before each action.' 
+                        : 'Runs automatically, pausing only for CAPTCHA/OTP.'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* AI Instructions - Before Start Button */}
+>>>>>>> 4aea923 (adapter-registry methods with fallback to ai automation)
               <div className="space-y-2">
                 <Label className="flex items-center gap-2">
                   <MessageSquare className="w-4 h-4" />

@@ -124,6 +124,7 @@ export interface ElectronAPI {
     executeAction: (data: { actionIndex: number }) => Promise<Result<void>>;
     setMode: (data: { mode: 'auto' | 'manual' }) => Promise<Result<void>>;
     getState: () => Promise<Result<AutomationState>>;
+    checkAdapter: (data: { portalId: string }) => Promise<Result<{ hasAdapter: boolean; adapterSlug: string | null }>>;
     getHistory: (params: PaginationParams) => Promise<Result<PaginatedResult<AutomationJob>>>;
   };
   browserView: {
