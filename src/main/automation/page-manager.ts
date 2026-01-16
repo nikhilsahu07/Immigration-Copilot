@@ -428,4 +428,25 @@ export class PageManager {
       return false;
     }
   }
+  async captureScreenshot(): Promise<string> {
+    try {
+      // Set fixed viewport for consistency and to control token usage (width aspect)
+      await this.page.setViewportSize({ width: 1280, height: 800 });
+      
+      // Capture full page screenshot
+      // Note: Playwright types might return Buffer even with encoding set in options object for some versions,
+      // but at runtime 'base64' encoding returns a string.
+      const result = await this.page.screenshot({ 
+        type: 'jpeg', 
+        quality: 50, 
+        fullPage: true, 
+        scale: 'css' 
+      });
+      
+      return result.toString('base64');
+    } catch (error) {
+      logger.error('Failed to capture screenshot:', error);
+      return '';
+    }
+  }
 }

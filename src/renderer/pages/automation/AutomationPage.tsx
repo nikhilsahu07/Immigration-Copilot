@@ -43,6 +43,7 @@ export function AutomationPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [attachScreenshots, setAttachScreenshots] = useState(false);
 
   useEffect(() => {
     fetchClients();
@@ -116,6 +117,7 @@ export function AutomationPage() {
       portalId: selectedPortal,
       extractionId: approvedExtraction._id,
       customPrompt: customPrompt || undefined,
+      attachScreenshots,
     });
   };
 
@@ -310,6 +312,37 @@ export function AutomationPage() {
                     />
                   </button>
                   <span className={`text-xs ${mode === 'auto' ? 'font-bold text-primary' : 'text-muted-foreground'}`}>Auto</span>
+                </div>
+              </div>
+
+              {/* Attach Screenshots Toggle */}
+              <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">Attach Screenshots</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Send page screenshot to AI (Slower but more accurate)
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs ${!attachScreenshots ? 'font-bold text-muted-foreground' : 'text-muted-foreground'}`}>Off</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={attachScreenshots}
+                    onClick={() => setAttachScreenshots(!attachScreenshots)}
+                    className={`
+                      relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background
+                      ${attachScreenshots ? 'bg-primary' : 'bg-input'}
+                    `}
+                  >
+                    <span
+                      className={`
+                        pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform
+                        ${attachScreenshots ? 'translate-x-5' : 'translate-x-0.5'}
+                      `}
+                    />
+                  </button>
+                  <span className={`text-xs ${attachScreenshots ? 'font-bold text-primary' : 'text-muted-foreground'}`}>On</span>
                 </div>
               </div>
 

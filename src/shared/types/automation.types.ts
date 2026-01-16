@@ -26,6 +26,7 @@ export interface AutomationJob extends BaseEntity, WithCompany, WithAgent {
   fieldsFilledCount: number;
   pauseReason?: PauseReason;
   customPrompt?: string;
+  attachScreenshots?: boolean;
   errorLog?: string;
   startedAt?: Date;
   completedAt?: Date;
@@ -119,6 +120,7 @@ export interface CreateJobInput {
   portalId: string;
   extractionId: string;
   customPrompt?: string;
+  attachScreenshots?: boolean;
 }
 
 export interface UpdateJobInput {
@@ -139,6 +141,7 @@ export interface AutomationState {
   captchaDetected: boolean;
   otpDetected: boolean;
   mode?: 'auto' | 'manual';
+  attachScreenshots?: boolean;
 }
 
 export interface CaptchaDetection {

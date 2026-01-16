@@ -133,7 +133,14 @@ export class AutomationService {
       const cleaned = await pageManager.extractHtml();
       this.emitStatus('Page structure ready', 20);
 
-      // 2. Fetch documents for context (include s3Key for file uploads)
+      // 3. Capture Screenshot (if enabled)
+      let screenshotBase64: string | undefined;
+      if (this.currentJob?.attachScreenshots) {
+        this.emitStatus('Capturing screenshot...', 25);
+        screenshotBase64 = await pageManager.captureScreenshot();
+      }
+
+      // 4. Fetch documents for context (include s3Key for file uploads)
       const documents = await documentRepository.findByClient(client._id, this.currentJob?.companyId || '');
       const documentList = documents.map(d => ({ 
         name: d.originalName, 
@@ -150,7 +157,8 @@ export class AutomationService {
         cleaned, 
         extraction.extractedData,
         documentList,
-        customPrompt
+        customPrompt,
+        screenshotBase64
       );
       this.emitStatus(`Got AI response: ${aiResult.pageType} page`, 50);
 

@@ -17,6 +17,7 @@ export class AutomationJobRepository {
       portalId: input.portalId,
       extractionId: input.extractionId,
       customPrompt: input.customPrompt,
+      attachScreenshots: input.attachScreenshots,
       status: 'queued',
       currentPage: 0,
       totalPages: 0,

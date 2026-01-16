@@ -53,7 +53,8 @@ export class AIService {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     extractedData: any,
     documentList: { name: string; category: string }[],
-    customPrompt?: string
+    customPrompt?: string,
+    screenshotBase64?: string
   ): Promise<AIAnalysisResult> {
     try {
       // Build document list string
@@ -79,6 +80,8 @@ export class AIService {
         
         CUSTOM INSTRUCTIONS:
         ${customPrompt || 'None'}
+
+        ${screenshotBase64 ? 'CRITICAL INSTRUCTION: An image of the webpage is attached.\n1. Use the IMAGE to understand the visual layout, context, and which form corresponds to the user\'s intent.\n2. Use the HTML provided below strictly for extracting correct CSS selectors.\n3. If there is a visual conflict between HTML and Image, prioritize the Image for "Context" but the HTML for "Selectors".' : ''}
         
         HTML CONTEXT:
         ${html.substring(0, 100000)}
@@ -144,14 +147,26 @@ export class AIService {
         '--------------------------------------------------\n'
       );
 
-      const result = await this.model.generateContent(prompt);
+      // Prepare request parts
+      const parts: any[] = [{ text: prompt }];
+      if (screenshotBase64) {
+        parts.push({
+          inlineData: {
+            mimeType: 'image/jpeg',
+            data: screenshotBase64
+          }
+        });
+      }
+
+      const result = await this.model.generateContent(parts);
       const response = result.response;
+      const usage = response.usageMetadata;
       const text = response.text();
       
       // Clean markdown code blocks if present
       const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
       
-      this.logResponse(cleanJson);
+      this.logResponse(cleanJson, usage, !!screenshotBase64);
 
       return JSON.parse(cleanJson) as AIAnalysisResult;
 
@@ -161,10 +176,16 @@ export class AIService {
     }
   }
 
-  private logResponse(response: string) {
+  private logResponse(response: string, usage?: any, imageAttached?: boolean) {
     const logFile = path.join(this.logPath, 'gemini_response.log');
     const timestamp = new Date().toISOString();
-    const entry = `\n[${timestamp}]\n${response}\n-----------------------------------\n`;
+    
+    let usageStr = '';
+    if (usage) {
+      usageStr = `\nImage Attached: ${imageAttached ? 'Yes' : 'No'}\nPrompt Tokens: ${usage.promptTokenCount}\nResponse Tokens: ${usage.candidatesTokenCount}\nTotal Tokens: ${usage.totalTokenCount}`;
+    }
+
+    const entry = `\n[${timestamp}]${usageStr}\n${response}\n-----------------------------------\n`;
     fs.appendFileSync(logFile, entry);
   }
 }
