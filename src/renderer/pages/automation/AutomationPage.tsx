@@ -26,8 +26,6 @@ export function AutomationPage() {
     resumeAfterCaptcha,
     loadUrl,
     hidePreview,
-    mode,
-    setMode,
   } = useAutomationStore();
 
   const { clients, fetchClients, isLoading: clientsLoading } = useClientStore();
@@ -303,8 +301,7 @@ export function AutomationPage() {
                 )}
               </div>
 
-<<<<<<< HEAD
-=======
+
               {/* Mode Toggles - Show after portal is selected */}
               {selectedPortal && (
                 <div className="space-y-4 p-3 rounded-lg bg-muted/50 border">
@@ -399,7 +396,7 @@ export function AutomationPage() {
               )}
 
               {/* AI Instructions - Before Start Button */}
->>>>>>> 4aea923 (adapter-registry methods with fallback to ai automation)
+
               <div className="space-y-2">
                 <Label className="flex items-center gap-2">
                   <MessageSquare className="w-4 h-4" />
@@ -416,36 +413,7 @@ export function AutomationPage() {
                 </p>
               </div>
 
-              {/* Mode Toggle */}
-              <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">Automation Mode</Label>
-                  <p className="text-xs text-muted-foreground">
-                    {mode === 'auto' ? 'Continues automatically' : 'Waits for approval'}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs ${mode === 'manual' ? 'font-bold text-primary' : 'text-muted-foreground'}`}>Manual</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={mode === 'auto'}
-                    onClick={() => setMode(mode === 'auto' ? 'manual' : 'auto')}
-                    className={`
-                      relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background
-                      ${mode === 'auto' ? 'bg-primary' : 'bg-input'}
-                    `}
-                  >
-                    <span
-                      className={`
-                        pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform
-                        ${mode === 'auto' ? 'translate-x-5' : 'translate-x-0.5'}
-                      `}
-                    />
-                  </button>
-                  <span className={`text-xs ${mode === 'auto' ? 'font-bold text-primary' : 'text-muted-foreground'}`}>Auto</span>
-                </div>
-              </div>
+
 
               <Button 
                 onClick={handleStart} 

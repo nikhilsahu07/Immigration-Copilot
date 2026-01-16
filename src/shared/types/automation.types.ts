@@ -146,15 +146,11 @@ export interface AutomationState {
   needsApproval: boolean;
   captchaDetected: boolean;
   otpDetected: boolean;
-<<<<<<< HEAD
-  mode?: 'auto' | 'manual';
-=======
   // Adapter-related state
   adapterMode: AdapterMode;
   executionMode: ExecutionMode;
   currentAdapter?: string;        // Slug of current adapter
   hasCustomAdapter?: boolean;     // Does selected portal have adapter?
->>>>>>> 4aea923 (adapter-registry methods with fallback to ai automation)
 }
 
 export interface CaptchaDetection {
