@@ -5,6 +5,10 @@ export function cleanHtml(html: string): string {
     .replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "")
     .replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "")
     .replace(/<svg\b[^>]*>([\s\S]*?)<\/svg>/gim, "")
+    .replace(/<img\b[^>]*>/gim, "")
+    .replace(/<cf-chatbot-widget-component\b[^>]*>([\s\S]*?)<\/cf-chatbot-widget-component>/gim, "")
+    .replace(/<cf-chatbot-component\b[^>]*>([\s\S]*?)<\/cf-chatbot-component>/gim, "")
+    .replace(/<cf-benefits\b[^>]*>([\s\S]*?)<\/cf-benefits>/gim, "")
     .replace(/<iframe\b[^>]*>([\s\S]*?)<\/iframe>/gim, "")
     .replace(/<noscript\b[^>]*>([\s\S]*?)<\/noscript>/gim, "")
     .replace(/<!--([\s\S]*?)-->/gim, "");

@@ -59,6 +59,7 @@ export const IPC_CHANNELS = {
   AUTOMATION_STOP: 'automation:stop',
   AUTOMATION_PAUSE: 'automation:pause',
   AUTOMATION_RESUME: 'automation:resume',
+  AUTOMATION_SET_MODE: 'automation:set-mode',
   AUTOMATION_APPROVE_MAPPING: 'automation:approve-mapping',
   AUTOMATION_REJECT_MAPPING: 'automation:reject-mapping',
   AUTOMATION_SUBMIT_FORM: 'automation:submit-form',

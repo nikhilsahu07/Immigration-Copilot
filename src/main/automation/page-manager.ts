@@ -175,7 +175,7 @@ export class PageManager {
           }
           
           // Small delay for realism
-          await this.page.waitForTimeout(200);
+          // await this.page.waitForTimeout(200); // Removed for speed per user request
       }
   }
 
@@ -281,7 +281,7 @@ export class PageManager {
       await target.click({ force: false });
       
       // Small delay after click for React re-renders
-      await this.page.waitForTimeout(500);
+      // await this.page.waitForTimeout(500); // Removed for speed
       
       return true;
     } catch (error) {
@@ -313,7 +313,7 @@ export class PageManager {
       logger.info(`Clicking button: "${expectedText}" (${selector})`);
       await target.click();
       
-      await this.page.waitForTimeout(500);
+      // await this.page.waitForTimeout(500); // Speed up match
       return true;
     } catch (error) {
       logger.error(`Failed to click button with text "${expectedText}":`, error);
@@ -363,7 +363,7 @@ export class PageManager {
           // Timeout is okay, page might not navigate
         }
       } else if (action.type === 'wait') {
-        await this.page.waitForTimeout(2000);
+        // await this.page.waitForTimeout(500); // Removed for speed per user request
       }
       // 'submit' type handled separately via clickSubmitButton
     }
@@ -391,7 +391,7 @@ export class PageManager {
       logger.info(`Clicking ${role} by name: "${name}"`);
       await target.click();
       
-      await this.page.waitForTimeout(500);
+      // await this.page.waitForTimeout(500);
       return true;
     } catch (error) {
       logger.debug(`clickByRole failed for ${role}:"${name}":`, error);
@@ -421,7 +421,7 @@ export class PageManager {
       logger.info(`Clicking element by text: "${text}"`);
       await target.click();
       
-      await this.page.waitForTimeout(500);
+      // await this.page.waitForTimeout(500);
       return true;
     } catch (error) {
       logger.debug(`clickByText failed for "${text}":`, error);

@@ -122,6 +122,7 @@ export interface ElectronAPI {
     submitOtp: (data: { otp: string }) => Promise<Result<void>>;
     resumeAfterCaptcha: () => Promise<Result<void>>;
     executeAction: (data: { actionIndex: number }) => Promise<Result<void>>;
+    setMode: (data: { mode: 'auto' | 'manual' }) => Promise<Result<void>>;
     getState: () => Promise<Result<AutomationState>>;
     getHistory: (params: PaginationParams) => Promise<Result<PaginatedResult<AutomationJob>>>;
   };

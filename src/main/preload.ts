@@ -101,6 +101,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     submitOtp: createInvoker(IPC_CHANNELS.AUTOMATION_SUBMIT_OTP),
     resumeAfterCaptcha: createInvoker(IPC_CHANNELS.AUTOMATION_RESUME_AFTER_CAPTCHA),
     executeAction: createInvoker(IPC_CHANNELS.AUTOMATION_EXECUTE_ACTION),
+    setMode: createInvoker(IPC_CHANNELS.AUTOMATION_SET_MODE),
     getState: createInvoker(IPC_CHANNELS.AUTOMATION_GET_STATE),
     getHistory: createInvoker(IPC_CHANNELS.AUTOMATION_GET_HISTORY),
   },

@@ -31,6 +31,7 @@ export class AutomationService {
   private currentMapping: FormMapping | null = null;
   private isRunning: boolean = false;
   private isPaused: boolean = false;
+  private mode: 'auto' | 'manual' = 'manual';
 
   async start(
     companyId: string, 
@@ -89,7 +90,8 @@ export class AutomationService {
       this.emitStatus('Connecting to browser...', 10);
       await browserConnector.connect();
       // Small delay to ensure Playwright sees the target
-      await new Promise(r => setTimeout(r, 1000));
+      // Small delay to ensure Playwright sees the target
+      await new Promise(r => setTimeout(r, 100));
       this.processPage(client, extraction, portal.url, input.customPrompt);
     } catch (e) {
       logger.error('Failed to connect to browser', e);
@@ -121,7 +123,7 @@ export class AutomationService {
       } catch (_e) {
         logger.warn(`Could not find page for ${portalDomain}, waiting for page load...`);
         this.emitStatus('Waiting for page load...', 15);
-        setTimeout(() => this.processPage(client, extraction, portalUrl, customPrompt), 3000);
+        setTimeout(() => this.processPage(client, extraction, portalUrl, customPrompt), 100);
         return;
       }
       
@@ -256,7 +258,8 @@ export class AutomationService {
       this.emitStatus('Navigation executed, waiting for new page...', 80);
       
       // Wait for navigation and then process next page
-      await new Promise(r => setTimeout(r, 2000));
+      // await new Promise(r => setTimeout(r, 2000)); // Removed for speed
+      
       
       if (this.isRunning && !this.isPaused) {
         this.processPage(client, extraction, portalUrl, customPrompt);
@@ -362,6 +365,16 @@ export class AutomationService {
 
     this.currentMapping = mapping as unknown as FormMapping;
     this.emitMapping(mapping);
+
+    // If in AUTO mode, auto-approve immediately
+    if (this.mode === 'auto') {
+      logger.info('Auto mode active - approving mapping immediately...');
+      this.emitStatus('Auto-approving immediately...', 85);
+      
+      if (this.isRunning && !this.isPaused && this.currentMapping) {
+        this.approveMapping(this.currentMapping);
+      }
+    }
   }
 
   // Called when user clicks "Approve/Proceed" - clicks submit button
@@ -396,21 +409,21 @@ export class AutomationService {
       }
 
       // Loop to next page
-      setTimeout(async () => {
-        if (this.currentJob && this.isRunning && !this.isPaused) {
-          try {
-            const c = await clientRepository.findById(this.currentJob.clientId, this.currentJob.companyId);
-            const e = await extractionRepository.findById(this.currentJob.extractionId, this.currentJob.companyId);
-            const p = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
-            
-            if (c && e && p) {
-              this.processPage(c, e, p.url);
-            }
-          } catch (err) {
-            logger.error('Failed to restart loop', err);
+      
+      // Loop to next page - removed delay
+      if (this.currentJob && this.isRunning && !this.isPaused) {
+        try {
+          const c = await clientRepository.findById(this.currentJob.clientId, this.currentJob.companyId);
+          const e = await extractionRepository.findById(this.currentJob.extractionId, this.currentJob.companyId);
+          const p = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
+          
+          if (c && e && p) {
+            this.processPage(c, e, p.url);
           }
+        } catch (err) {
+          logger.error('Failed to restart loop', err);
         }
-      }, 3000);
+      }
 
     } catch (error) {
       logger.error('Execution failed:', error);
@@ -524,10 +537,9 @@ export class AutomationService {
 
         if (c && e && p) {
           // Small delay for page navigation
-          setTimeout(() => {
-            this.currentMapping = null;
-            this.processPage(c, e, p.url);
-          }, 2000);
+          // Continue to next page immediately
+          this.currentMapping = null;
+          this.processPage(c, e, p.url);
         }
       }
     } catch (error) {
@@ -547,7 +559,20 @@ export class AutomationService {
       needsApproval: !!this.currentMapping,
       captchaDetected: false,
       otpDetected: false,
+      mode: this.mode,
     };
+  }
+
+  setMode(mode: 'auto' | 'manual') {
+    this.mode = mode;
+    logger.info(`Automation mode set to: ${mode}`);
+    this.emitStatus(`Mode switched to ${mode}`, 0);
+    
+    // If we switch to auto and are waiting for approval, trigger it
+    if (mode === 'auto' && this.currentMapping && this.isRunning && !this.isPaused) {
+       logger.info('Switched to auto while waiting - triggering approval');
+       this.approveMapping(this.currentMapping);
+    }
   }
 
   // --- Helper to emit events to renderer ---

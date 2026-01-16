@@ -138,6 +138,7 @@ export interface AutomationState {
   needsApproval: boolean;
   captchaDetected: boolean;
   otpDetected: boolean;
+  mode?: 'auto' | 'manual';
 }
 
 export interface CaptchaDetection {

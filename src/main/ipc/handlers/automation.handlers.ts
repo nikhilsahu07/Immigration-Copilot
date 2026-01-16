@@ -58,6 +58,18 @@ export function registerAutomationHandlers(): void {
     }
   });
 
+  // Set Mode
+  ipcMain.handle(IPC_CHANNELS.AUTOMATION_SET_MODE, async (_event, { mode }) => {
+    try {
+      if (mode !== 'auto' && mode !== 'manual') throw new Error('Invalid mode');
+      automationService.setMode(mode);
+      return success(undefined);
+    } catch (error) {
+      logger.error('Set mode error:', error);
+      return handleError(error);
+    }
+  });
+
   // Resume After Captcha
   ipcMain.handle(IPC_CHANNELS.AUTOMATION_RESUME_AFTER_CAPTCHA, async () => {
     try {

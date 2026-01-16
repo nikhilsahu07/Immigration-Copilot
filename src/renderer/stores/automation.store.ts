@@ -17,8 +17,10 @@ interface AutomationStoreState {
   otpFieldSelector: string | null;
   isLoading: boolean;
   error: string | null;
+  mode: 'auto' | 'manual';
   
   // Actions
+  setMode: (mode: 'auto' | 'manual') => Promise<void>;
   startAutomation: (data: CreateJobInput) => Promise<boolean>;
   stopAutomation: () => Promise<void>;
   pauseAutomation: () => Promise<void>;
@@ -57,10 +59,20 @@ const initialState = {
   otpFieldSelector: null,
   isLoading: false,
   error: null,
+  mode: 'manual' as 'auto' | 'manual',
 };
 
 export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
   ...initialState,
+
+  setMode: async (mode) => {
+    try {
+      await api.automation.setMode({ mode });
+      set({ mode });
+    } catch {
+      set({ error: 'Failed to set mode' });
+    }
+  },
 
   startAutomation: async (data) => {
     set({ isLoading: true, error: null });

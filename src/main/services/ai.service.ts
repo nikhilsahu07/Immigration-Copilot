@@ -130,7 +130,7 @@ export class AIService {
         8. For checkboxes that say "agree", "accept", "confirm", etc: set value to "true"
       `;
 
-      // Log prompt to gemini_prompt.logs
+      // Log prompt to gemini_prompt.log
       geminiPromptLogger.info(
         '--- NEW AUTOMATION REQUEST ---\n' + 
         `TIMESTAMP: ${new Date().toISOString()}\n\n` +
