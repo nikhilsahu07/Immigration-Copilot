@@ -193,6 +193,32 @@ export abstract class BaseAdapter implements IPortalAdapter {
   }
 
   /**
+   * Safely upload a file. Returns true if successful.
+   */
+  protected async safeFileUpload(
+    page: Page, 
+    selector: string, 
+    filePath: string,
+    options?: { timeout?: number }
+  ): Promise<boolean> {
+    try {
+      const fileInput = page.locator(selector);
+      await fileInput.waitFor({ 
+        state: 'attached', 
+        timeout: options?.timeout ?? 5000 
+      });
+      await fileInput.setInputFiles(filePath);
+      this.logger.info(`Uploaded file: ${selector}`, { filePath });
+      return true;
+    } catch (error) {
+      this.logger.warn(`Failed to upload file: ${selector}`, { 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+      return false;
+    }
+  }
+
+  /**
    * Wait for an element to appear.
    */
   protected async waitForElement(

@@ -15,7 +15,7 @@ import { adapterRegistry } from '../registry';
 
 // Import portal adapters
 import { AttcAqatoPortalAdapter } from './attc-aqato-portal';
-import { CourseFinderAIAdapter } from './coursefinderai-portal';
+import { CourseFinderAdapter } from './coursefinder';
 
 /**
  * Register all portal adapters.
@@ -24,7 +24,7 @@ import { CourseFinderAIAdapter } from './coursefinderai-portal';
 export function registerPortalAdapters(): void {
   // Register portal adapters
   adapterRegistry.register(new AttcAqatoPortalAdapter());
-  adapterRegistry.register(new CourseFinderAIAdapter());
+  adapterRegistry.register(new CourseFinderAdapter());
 
   // Add new portal adapter registrations here:
   // import { MyPortalAdapter } from './my-portal';
@@ -33,4 +33,4 @@ export function registerPortalAdapters(): void {
 
 // Export adapters for direct access if needed
 export { AttcAqatoPortalAdapter } from './attc-aqato-portal';
-export { CourseFinderAIAdapter } from './coursefinderai-portal';
+export { CourseFinderAdapter } from './coursefinder';

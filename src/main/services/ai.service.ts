@@ -161,6 +161,61 @@ export class AIService {
     }
   }
 
+  /**
+   * Generate execution plan for schema-based adapters.
+   * Takes page schema definition and returns fields to fill and action to execute.
+   */
+  async generateExecutionPlan(params: {
+    schema: { name: string; fields: any[]; actions: any[] };
+    extractedData: any;
+    userIntent: string;
+  }): Promise<{ fill: { fieldId: string; value: string }[]; actionId?: string }> {
+    try {
+      const { schema, extractedData, userIntent } = params;
+      
+      const prompt = `
+You are an automation agent. Given a page schema and client data, determine which fields to fill and what action to take.
+
+PAGE: ${schema.name}
+
+AVAILABLE FIELDS:
+${JSON.stringify(schema.fields, null, 2)}
+
+AVAILABLE ACTIONS:
+${JSON.stringify(schema.actions, null, 2)}
+
+CLIENT DATA:
+${JSON.stringify(extractedData, null, 2)}
+
+USER INTENT: ${userIntent}
+
+Return a JSON object with:
+{
+  "fill": [{ "fieldId": "field_id_from_schema", "value": "value_from_client_data" }],
+  "actionId": "action_id_to_execute_or_null"
+}
+
+Rules:
+1. Only include fields that have matching client data
+2. Match field descriptions to appropriate client data fields
+3. If this is a navigation/dashboard page, focus on actionId
+4. If form is complete, set actionId to submit/save action
+5. Return raw JSON only, no markdown
+`;
+
+      const result = await this.model.generateContent(prompt);
+      const text = result.response.text();
+      const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      
+      this.logResponse(`[ExecutionPlan] ${cleanJson}`);
+      
+      return JSON.parse(cleanJson);
+    } catch (error) {
+      logger.error('generateExecutionPlan failed:', error);
+      return { fill: [] };
+    }
+  }
+
   private logResponse(response: string) {
     const logFile = path.join(this.logPath, 'gemini_response.log');
     const timestamp = new Date().toISOString();

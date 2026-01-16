@@ -1,17 +1,13 @@
 import { Page } from 'playwright-core';
 import { ExtractedData } from '../../shared/types';
 
-//   
 // Adapter Configuration
-//   
 
 /** Mode of execution for adapters */
 export type AdapterMode = 'custom' | 'ai';
 export type ExecutionMode = 'auto' | 'manual';
 
-//   
 // Adapter Context
-//   
 
 /** Document info for file uploads */
 export interface DocumentInfo {
@@ -36,9 +32,7 @@ export interface AdapterContext {
   onFieldFilled: (fieldName: string, value: string) => void;  // Report filled fields
 }
 
-//   
 // Adapter Results
-//   
 
 /** Error structure for adapter failures */
 export interface AdapterError {
@@ -61,10 +55,8 @@ export interface AdapterResult {
   error?: AdapterError;
   shouldFallbackToAI?: boolean;   // If custom adapter wants to fallback
 }
-
-//   
+ 
 // Adapter Interface
-//   
 
 /**
  * Interface that all portal adapters must implement.
@@ -93,10 +85,7 @@ export interface IPortalAdapter {
   execute(context: AdapterContext): Promise<AdapterResult>;
 }
 
-//   
 // Adapter Configuration for Prompts
-//   
-
 /**
  * Configuration for adapter-specific prompts.
  * Each adapter can define its own prompt template for AI assistance.
