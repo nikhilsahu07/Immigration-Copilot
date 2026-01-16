@@ -120,7 +120,7 @@ export class AIService {
         }
 
         CRITICAL RULES:
-        1. For DASHBOARD pages: fields array should be empty, focus on actions array with navigation clicks
+        1. For DASHBOARD pages: actions array MUST contain ONLY ONE (1) primary navigation action (e.g. "Create New", "Start Application"). Do NOT return multiple options. Prioritize the most logical "Start" button.
         2. For FORM pages: fields array should have ALL VISIBLE form fields - do NOT skip any input, select, or checkbox
         3. SELECTOR FORMAT: Use ONLY valid CSS selectors. NEVER use :contains(), :has(), or jQuery pseudo-selectors - they are INVALID
         4. For click actions: Use a SIMPLE selector (e.g. "button[data='green']", ".buttons_border") and put the button text in "expectedText"

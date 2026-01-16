@@ -20,6 +20,7 @@ export interface AutomationJob extends BaseEntity, WithCompany, WithAgent {
   portalId: string;
   extractionId: string;
   status: JobStatus;
+  currentUrl?: string;
   currentPage: number;
   totalPages: number;
   pagesProcessed: PageProcessed[];

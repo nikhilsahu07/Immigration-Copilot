@@ -37,11 +37,13 @@ export class BrowserConnector {
 
     if (!targetPage) {
         // Fallback: Use the first page if only one exists (common in Electron BrowserView)
-        // Or if we can't find by URL, maybe it's the active tab.
-        // In our Electron app, BrowserView is separate context usually? 
-        // Actually Electron main window and BrowserView share the same debugging port process
-        // but might be different targets. 
-        // We will log available pages to help debugging.
+        // This is robust for redirects or when URL doesn't match exactly what we expected
+        if (pages.length > 0) {
+           const fallbackPage = pages[0];
+           logger.warn(`Could not find page matching "${urlSubstring}". Falling back to first available page: ${fallbackPage.url()}`);
+           return fallbackPage;
+        }
+
         const urls = pages.map(p => p.url());
         logger.warn(`Could not find page with URL containing "${urlSubstring}". Available pages: ${urls.join(', ')}`);
         

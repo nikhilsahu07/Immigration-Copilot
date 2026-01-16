@@ -128,6 +128,17 @@ export class AutomationService {
       }
       
       const pageManager = new PageManager(page);
+      
+      // Update job with current URL for resume support
+      const currentUrl = page.url();
+      if (this.currentJob) {
+        // Update local state
+        this.currentJob.currentUrl = currentUrl;
+        // Fire and forget update
+        automationJobRepository.updateCurrentUrl(this.currentJob._id, currentUrl).catch(e => {
+            logger.warn('Failed to update currentUrl', e);
+        });
+      }
 
       // 1. Extract HTML
       const cleaned = await pageManager.extractHtml();
@@ -493,7 +504,10 @@ export class AutomationService {
         const p = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
 
         if (c && e && p) {
-          this.processPage(c, e, p.url);
+          // Use the last visited URL if available, otherwise portal start URL
+          const resumeUrl = this.currentJob.currentUrl || p.url;
+          logger.info(`Resuming automation at URL: ${resumeUrl}`);
+          this.processPage(c, e, resumeUrl);
         }
       }
     }

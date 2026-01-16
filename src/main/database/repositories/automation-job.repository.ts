@@ -133,6 +133,13 @@ export class AutomationJobRepository {
     );
   }
 
+  async updateCurrentUrl(id: string, url: string): Promise<void> {
+    await this.collection.updateOne(
+      { _id: new ObjectId(id) } as any,
+      { $set: { currentUrl: url, updatedAt: new Date() } } as UpdateFilter<AutomationJob>
+    );
+  }
+
   async setError(id: string, errorLog: string): Promise<void> {
     await this.collection.updateOne(
       { _id: new ObjectId(id) } as any,
