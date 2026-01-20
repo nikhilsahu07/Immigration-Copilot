@@ -1,5 +1,8 @@
 import { Page } from 'playwright-core';
-import { logger } from '../../core/logger';
+import { app } from 'electron';
+import path from 'path';
+import fs from 'fs';
+import { logger, automationPageLogger } from '../../core/logger';
 
 /**
  * Screenshot capture utilities for automation
@@ -10,7 +13,7 @@ export class ScreenshotCapture {
 
   /**
    * Capture a screenshot of the current page
-   * Returns base64-encoded JPEG
+   * Returns base64-encoded JPEG and also saves a copy to disk
    */
   async capture(): Promise<string> {
     try {
@@ -24,7 +27,24 @@ export class ScreenshotCapture {
         fullPage: true, 
         scale: 'css' 
       });
-      
+
+      // Persist screenshot to disk for debugging/audit
+      try {
+        const baseDir = app.isPackaged ? app.getPath('userData') : process.cwd();
+        const screenshotsDir = path.join(baseDir, 'resources', 'screenshots');
+
+        fs.mkdirSync(screenshotsDir, { recursive: true });
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `screenshot-${timestamp}.jpg`;
+        const filePath = path.join(screenshotsDir, filename);
+
+        fs.writeFileSync(filePath, result);
+        automationPageLogger.info(`Saved screenshot to ${filePath}`);
+      } catch (fileError) {
+        logger.warn('Failed to persist screenshot to disk', fileError as Error);
+      }
+
       return result.toString('base64');
     } catch (error) {
       logger.error('Failed to capture screenshot:', error);

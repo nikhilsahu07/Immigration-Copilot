@@ -2,6 +2,7 @@
 import { Page } from 'playwright-core';
 import { logger } from '../core/logger';
 import { cleanHtml } from './page/html-extractor';
+import { FieldExtractor } from './page/field-extractor';
 import { BaseFiller, AutomatedField } from './fillers/base-filler';
 import { TextFiller } from './fillers/text-filler';
 import { SelectFiller } from './fillers/select-filler';
@@ -15,6 +16,7 @@ import { FieldTypeDetector } from './detection/field-type-detector';
 import { ClickHandler } from './actions/click-handler';
 import { FormSubmitHandler } from './actions/form-submit-handler';
 import type { DetectionResult } from './types/internal-types';
+import { HtmlField } from '../../shared/types/automation.types';
 
 // Re-export DetectionResult for backwards compatibility
 export type { DetectionResult };
@@ -30,6 +32,7 @@ export class PageManager {
   private fieldTypeDetector: FieldTypeDetector;
   private clickHandler: ClickHandler;
   private formSubmitHandler: FormSubmitHandler;
+  private fieldExtractor: FieldExtractor;
 
   constructor(private page: Page) {
       this.initializeFillers();
@@ -38,6 +41,7 @@ export class PageManager {
       this.fieldTypeDetector = new FieldTypeDetector(page);
       this.clickHandler = new ClickHandler(page);
       this.formSubmitHandler = new FormSubmitHandler(page);
+      this.fieldExtractor = new FieldExtractor(page);
   }
 
   private initializeFillers() {
@@ -76,6 +80,21 @@ export class PageManager {
           logger.error('Failed to extract HTML', e);
           throw e;
       }
+  }
+
+  /**
+   * Extract structured form fields from page
+   */
+  async extractFields(): Promise<HtmlField[]> {
+    try {
+      return await this.fieldExtractor.extractFields({
+        includeHidden: false,
+        includeDisabled: false,
+      });
+    } catch (e) {
+      logger.error('Failed to extract fields', e);
+      throw e;
+    }
   }
 
 

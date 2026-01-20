@@ -3,24 +3,24 @@
 ## Quick Reference Checklist
 
 ### Phase 1.1: Core Extraction
-- [ ] Create `src/main/automation/page/field-extractor.ts`
-- [ ] Implement **browser-side raw extraction** via `page.evaluate()` (NO `this`, NO Node helpers)
-- [ ] Implement **node-side normalization** pipeline (dedup, labels, options, selectors)
-- [ ] Implement selector synthesis + **uniqueness validation** (count===1, escalate strategy)
-- [ ] Implement `getLabelText()` logic (7 strategies), executed node-side via re-query helpers
-- [ ] Handle select dropdowns with options
-- [ ] Handle radio groups with all options
-- [ ] Handle OTP/multi-input widgets (dedup by container, not by element identity)
-- [ ] Add error handling and logging
+- [x] Create `src/main/automation/page/field-extractor.ts`
+- [x] Implement **browser-side raw extraction** via `page.evaluate()` (NO `this`, NO Node helpers)
+- [x] Implement **node-side normalization** pipeline (dedup, labels, options, selectors)
+- [x] Implement selector synthesis + **uniqueness validation** (count===1, escalate strategy)
+- [x] Implement `getLabelText()` logic (7 strategies), executed node-side via re-query helpers
+- [x] Handle select dropdowns with options
+- [x] Handle radio groups with all options
+- [x] Handle OTP/multi-input widgets (dedup by container, not by element identity)
+- [x] Add error handling and logging
 
 ### Phase 1.2: Integration
-- [ ] Update `PageManager.extractFields()` method
-- [ ] Update `AIService.analyzePageAndMapFields()` signature
-- [ ] Update prompt to use structured fields (JSON)
-- [ ] Update prompt rule: if fields are similar, prefer (labelText > required > earlier DOM order)
-- [ ] Make HTML context optional and truncated
-- [ ] Update `AutomationService.processPage()` to use new flow
-- [ ] Review type definitions alignment
+- [x] Update `PageManager.extractFields()` method
+- [x] Update `AIService.analyzePageAndMapFields()` signature
+- [x] Update prompt to use structured fields (JSON)
+- [x] Update prompt rule: if fields are similar, prefer (labelText > required > earlier DOM order)
+- [x] Make HTML context optional and truncated
+- [x] Update `AutomationService.processPage()` to use new flow
+- [x] Review type definitions alignment
 
 ### Phase 1.3: Testing
 - [ ] Unit tests for `FieldExtractor`

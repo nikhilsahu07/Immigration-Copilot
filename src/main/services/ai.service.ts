@@ -1,42 +1,30 @@
 
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import { getEnv } from '../config/environment';
-import { logger, geminiPromptLogger } from '../core/logger';
-import fs from 'fs';
-import path from 'path';
+import { logger, geminiPromptLogger, geminiResponseLogger, htmlFieldsStructureLogger } from '../core/logger';
 
 import { BehaviorFormMapping } from '../../shared/types';
-import { type } from 'os';
-import { selectors } from 'playwright-core';
-import { text } from 'stream/consumers';
+import { HtmlField } from '../../shared/types/automation.types';
 
-export interface AIAnalysisResult extends BehaviorFormMapping {
-  // Extends BehaviorFormMapping with backward compatibility fields
-}
+export type AIAnalysisResult = BehaviorFormMapping;
 
 export class AIService {
   private model: GenerativeModel;
-  private logPath: string;
 
   constructor() {
     const env = getEnv();
     const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
     this.model = genAI.getGenerativeModel({ model: env.GEMINI_MODEL });
-    
-    // Set up log path
-    this.logPath = path.join(process.cwd(), 'resources', 'logs');
-    if (!fs.existsSync(this.logPath)) {
-      fs.mkdirSync(this.logPath, { recursive: true });
-    }
   }
 
   async analyzePageAndMapFields(
-    html: string, 
+    htmlFields: HtmlField[], 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     extractedData: any,
     documentList: { name: string; category: string }[],
     customPrompt?: string,
-    screenshotBase64?: string
+    screenshotBase64?: string,
+    htmlContext?: string
   ): Promise<AIAnalysisResult> {
     try {
       // Build document list string
@@ -64,10 +52,12 @@ export class AIService {
           CUSTOM INSTRUCTIONS:
           ${customPrompt || 'None'}
 
-          ${screenshotBase64 ? `CRITICAL INSTRUCTION: An image of the webpage is attached.\n1. Use the IMAGE to understand the visual layout, context, and which form corresponds to the user's intent. Use the HTML provided below strictly for extracting correct CSS selectors.\n3. If there is a visual conflict between HTML and Image, prioritize the Image for "Context" but the HTML for "Selectors".` : ''}
+          ${screenshotBase64 ? `CRITICAL INSTRUCTION: An image of the webpage is attached.\n1. Use the IMAGE to understand the visual layout, context, and which form corresponds to the user's intent. Use the HTML fields provided below strictly for extracting correct CSS selectors.\n2. If there is a visual conflict between HTML and Image, prioritize the Image for "Context" but the HTML/fields for "Selectors".` : ''}
 
-          HTML CONTEXT:
-          ${html.substring(0, 100000)}
+          FORM FIELDS STRUCTURE (JSON):
+          ${JSON.stringify(htmlFields, null, 2)}
+
+          ${htmlContext ? `\nHTML CONTEXT (for reference only, use field structure above):\n${htmlContext.substring(0, 5000)}\n` : ''}
 
           FIELD BEHAVIOR TYPES (CRITICAL - choose the most specific):
           - "text_entry" = simple text input
@@ -99,8 +89,8 @@ export class AIService {
             "isFormPage": boolean,
             "fields": [
               {
-                "selector": "SIMPLE CSS selector (#id, .class, input[name='x'])",
-                "fieldName": "Human-readable field name",
+                "selector": "USE uniqueSelector from field structure above",
+                "fieldName": "Human-readable field name (use labelText if available)",
                 "behavior": "text_entry|masked_input|search_and_select|single_choice|date_picker|boolean_toggle|consent_checkbox|otp_group|range_slider|file_upload",
                 "intent": "semantic_name (e.g. citizenship_country, passport_number)",
                 "expectedValue": "value from client data OR '__MISSING__'",
@@ -123,27 +113,31 @@ export class AIService {
             "otp": { "detected": boolean, "behavior": "otp_group", "confidence": "high|medium|low" }
           }
 
+          FIELD PREFERENCE RULE (when multiple fields are semantically similar):
+          - Prefer the field with: 1) explicit labelText (non-empty), 2) required=true, 3) earlier DOM order (index ascending)
+
           CRITICAL RULES:
           1. DESCRIBE, DON'T COMMAND: Identify what fields/actions MEAN, not how to execute them
-          2. SINGLE ACTION RULE (MANDATORY FOR ALL PAGES):
-            - The \"actions\" array MUST ALWAYS contain EXACTLY ONE action
+          2. DASHBOARD OUTPUT CONSTRAINT (MANDATORY):
+            - If pageType = "dashboard":
+              - fields MUST be an empty array: "fields": []
+              - actions MUST contain EXACTLY ONE item: "actions": [ { ... } ]
+              - Choose the single most relevant next step (e.g., "start new application", "create new", "continue", "open application")
+          3. FORM OUTPUT CONSTRAINT:
+            - If pageType = "form":
+              - MAP ALL VISIBLE FIELDS from the structure above
+              - Include fields even if missing data (use "__MISSING__")
+              - actions can include 0+ items as needed
+          4. SINGLE ACTION RULE (MANDATORY FOR ALL PAGES):
+            - The "actions" array MUST ALWAYS contain EXACTLY ONE action
             - Choose the SINGLE most relevant primary action for this page
-            - Dashboard: the main navigation button (e.g., \"Register New Student\", \"Create Application\")
-            - Form: the primary submit button (e.g., \"Next\", \"Submit\", \"Continue\", \"Save\")
+            - Dashboard: the main navigation button (e.g., "Register New Student", "Create Application")
+            - Form: the primary submit button (e.g., "Next", "Submit", "Continue", "Save")
             - Do NOT include secondary actions like filters, search, archive, or cancel buttons
             - Focus on the action that progresses the user toward completing the application
-          3. DASHBOARD OUTPUT CONSTRAINT:
-            - If pageType = \"dashboard\":
-              - fields MUST be an empty array: \"fields\": []
-              - actions MUST contain EXACTLY ONE item with intent=\"primary_navigation\" or intent=\"create_new\"
-          4. FORM OUTPUT CONSTRAINT:
-            - If pageType = \"form\":
-              - MAP ALL VISIBLE FORM FIELDS (not dashboard filters or search fields)
-              - Include fields even if missing data (use \"__MISSING__\")
-              - actions MUST contain EXACTLY ONE item (the primary submit/next button)
-          5. CONFIDENCE IS KEY: low confidence → require review (status=\"low_confidence\")
-          6. NO FAKE DATA: Never invent values. \"__MISSING__\" is better than a guess
-          7. SELECTORS: Simple CSS only (#id, .class, input[name=\"x\"]) - NO :contains() or :has()
+          5. CONFIDENCE IS KEY: low confidence → require review (status="low_confidence")
+          6. NO FAKE DATA: Never invent values. "__MISSING__" is better than a guess
+          7. SELECTORS: Use the "uniqueSelector" from the field structure - DO NOT modify it
           8. BEHAVIOR OVER TYPE: Use "search_and_select" only when it's truly searchable/autocomplete
           9. Terms checkboxes: behavior="consent_checkbox", confidence="high"
           10. OTP fields: behavior="otp_group", selector should match ALL OTP inputs
@@ -151,18 +145,20 @@ export class AIService {
           `;
 
 
-      // Log prompt to gemini_prompt.log
+      // Log structured fields separately for debugging/analysis (exact JSON, not part of prompt)
+      try {
+        htmlFieldsStructureLogger.info(
+          `${JSON.stringify(htmlFields, null, 2)}`
+        );
+      } catch {
+        // Never break on logging failures
+      }
+
+      // Log EXACT prompt text we send to Gemini (plus timestamp wrapper)
       geminiPromptLogger.info(
-        '--- NEW AUTOMATION REQUEST ---\n' + 
-        `TIMESTAMP: ${new Date().toISOString()}\n\n` +
-        '--- PAGE TYPE ANALYSIS ---\n' +
-        '--- CUSTOM PROMPT ---\n' + 
-        (customPrompt || 'None') + '\n\n' + 
-        '--- DOCUMENTS ---\n' +
-        documentListStr + '\n\n' +
-        '--- FINAL PROMPT ---\n' + 
-        prompt + '\n\n' +
-        '--------------------------------------------------\n'
+        `TIMESTAMP: ${new Date().toISOString()}\n` +
+        '--- PROMPT SENT TO GEMINI ---\n' +
+        `${prompt}\n`
       );
 
       // Prepare request parts
@@ -195,7 +191,6 @@ export class AIService {
   }
 
   private logResponse(response: string, usage?: any, imageAttached?: boolean) {
-    const logFile = path.join(this.logPath, 'gemini_response.log');
     const timestamp = new Date().toISOString();
     
     let usageStr = '';
@@ -204,7 +199,7 @@ export class AIService {
     }
 
     const entry = `\n[${timestamp}]${usageStr}\n${response}\n-----------------------------------\n`;
-    fs.appendFileSync(logFile, entry);
+    geminiResponseLogger.info(entry);
   }
 }
 

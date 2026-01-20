@@ -151,6 +151,10 @@ This document provides a comprehensive analysis of the form filling automation s
    - `medium` → Require review (manual mode)
    - `low` → Always require review
    - `missing_data` → Pause for input
+   - `captcha` → Pause for input
+   - `otp` → Pause for input
+   - `unknown` → Pause for input
+# Important: all fields will be field automatically, and then asked for review or asked for input if confidence is low or missing_data or captcha or otp or unknown(also only when manual mode is enabled)
 
 3. For each high-confidence field:
    ```typescript

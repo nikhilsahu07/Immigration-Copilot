@@ -1,10 +1,18 @@
 import winston from 'winston';
 import path from 'path';
 import { app } from 'electron';
+import fs from 'fs';
 
 const logDir = app.isPackaged
   ? path.join(app.getPath('userData'), 'logs')
   : path.join(__dirname, '../../resources/logs');
+
+// Ensure log directory exists before Winston tries to write.
+try {
+  fs.mkdirSync(logDir, { recursive: true });
+} catch {
+  // Avoid crashing at import-time; Winston transports may fail later if the dir truly isn't writable.
+}
 
 const logFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
@@ -73,6 +81,32 @@ export const logger = winston.createLogger({
 // Create automation-specific logger
 export const automationLogger = logger.child({ service: 'automation' });
 
+function createPlainFileLogger(filename: string) {
+  return winston.createLogger({
+    level: process.env.LOG_LEVEL || 'info',
+    format: logFormat,
+    transports: [
+      new winston.transports.File({
+        filename: path.join(logDir, filename),
+        maxsize: 10 * 1024 * 1024,
+        maxFiles: 3,
+      }),
+    ],
+  });
+}
+
+// More granular automation logs (separate files per area)
+export const automationNavigationLogger = createPlainFileLogger('automation_navigation.log');
+export const automationFillingLogger = createPlainFileLogger('automation_filling.log');
+export const automationMappingLogger = createPlainFileLogger('automation_mapping.log');
+export const automationPageLogger = createPlainFileLogger('automation_page.log');
+
+// Raw HTML context log (cleaned HTML sent as optional context)
+export const rawHtmlContextLogger = createPlainFileLogger('raw_html_context.log');
+
+// Structured HTML fields log (clean JSON HtmlField[] structure)
+export const htmlFieldsStructureLogger = createPlainFileLogger('html_fields_structure.log');
+
 // Create gemini prompt logger
 export const geminiPromptLogger = winston.createLogger({
   level: 'info',
@@ -82,6 +116,21 @@ export const geminiPromptLogger = winston.createLogger({
   transports: [
     new winston.transports.File({
       filename: path.join(logDir, 'gemini_prompt.log'),
+      maxsize: 10 * 1024 * 1024,
+      maxFiles: 3,
+    }),
+  ],
+});
+
+// Create gemini response logger (kept separate from structured Winston logs on purpose)
+export const geminiResponseLogger = winston.createLogger({
+  level: 'info',
+  format: winston.format.printf(({ message }) => {
+    return message as string;
+  }),
+  transports: [
+    new winston.transports.File({
+      filename: path.join(logDir, 'gemini_response.log'),
       maxsize: 10 * 1024 * 1024,
       maxFiles: 3,
     }),

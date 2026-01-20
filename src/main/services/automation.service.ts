@@ -16,7 +16,7 @@ import {
   documentRepository,
   chatRepository
 } from '../database/repositories';
-import { logger } from '../core/logger';
+import { logger, rawHtmlContextLogger } from '../core/logger';
 import { createError } from '../core/error-handler';
 import { ERROR_CODES } from '../../shared/constants';
 
@@ -146,9 +146,27 @@ export class AutomationService {
         });
       }
 
-      // 1. Extract HTML
-      const cleaned = await pageManager.extractHtml();
-      EventEmitter.emitStatus('Page structure ready', 20);
+      // 1. Extract structured form fields
+      EventEmitter.emitStatus('Extracting form structure...', 18);
+      const htmlFields = await pageManager.extractFields();
+      EventEmitter.emitStatus('Form structure extracted', 20);
+
+      // 2. (Removed) Do NOT send raw/cleaned HTML context to Gemini, even when screenshots are enabled.
+      if (this.currentJob?.attachScreenshots) {
+        // If you still want raw HTML for debugging, we log it locally only (not sent to Gemini).
+        try {
+          const cleaned = await pageManager.extractHtml();
+          rawHtmlContextLogger.info(
+            `--- RAW HTML CONTEXT ---\n` +
+              `TIMESTAMP: ${new Date().toISOString()}\n` +
+              `URL: ${currentUrl}\n\n` +
+              `${cleaned}\n` +
+              `------------------------\n`
+          );
+        } catch {
+          // Logging failure should never break automation
+        }
+      }
 
       // 3. Capture Screenshot (if enabled)
       let screenshotBase64: string | undefined;
@@ -168,10 +186,10 @@ export class AutomationService {
       // Create lookup map for resolving document names to S3 keys
       const documentLookup = new Map(documents.map(d => [d.originalName, d.s3Key]));
 
-      // 3. AI Analysis with page type classification
+      // 5. AI Analysis with structured fields
       EventEmitter.emitStatus('Processing with AI...', 30);
       const aiResult = await aiService.analyzePageAndMapFields(
-        cleaned, 
+        htmlFields,  // Changed: structured fields instead of raw HTML
         extraction.extractedData,
         documentList,
         customPrompt,
