@@ -1,7 +1,7 @@
 
 import { Page } from 'playwright-core';
 import { logger } from '../core/logger';
-import { cleanHtml } from '../utils/html-cleaner';
+import { cleanHtml } from './page/html-extractor';
 import { BaseFiller, AutomatedField } from './fillers/base-filler';
 import { TextFiller } from './fillers/text-filler';
 import { SelectFiller } from './fillers/select-filler';
@@ -9,19 +9,35 @@ import { RadioFiller } from './fillers/radio-filler';
 import { CheckboxFiller } from './fillers/checkbox-filler';
 import { FileUploadFiller } from './fillers/file-upload-filler';
 import { DateFiller } from './fillers/date-filler';
+import { ScreenshotCapture } from './page/screenshot-capture';
+import { SpecialElementsDetector } from './detection/special-elements-detector';
+import { FieldTypeDetector } from './detection/field-type-detector';
+import { ClickHandler } from './actions/click-handler';
+import { FormSubmitHandler } from './actions/form-submit-handler';
+import type { DetectionResult } from './types/internal-types';
 
-export interface DetectionResult {
-    hasCaptcha: boolean;
-    hasOtp: boolean;
-    reason?: string;
-    selector?: string;
-}
+// Re-export DetectionResult for backwards compatibility
+export type { DetectionResult };
 
+/**
+ * Page interaction coordinator
+ * Delegates to specialized handlers for different responsibilities
+ */
 export class PageManager {
   private fillers: Record<string, BaseFiller> = {};
+  private screenshotCapture: ScreenshotCapture;
+  private specialElementsDetector: SpecialElementsDetector;
+  private fieldTypeDetector: FieldTypeDetector;
+  private clickHandler: ClickHandler;
+  private formSubmitHandler: FormSubmitHandler;
 
   constructor(private page: Page) {
       this.initializeFillers();
+      this.screenshotCapture = new ScreenshotCapture(page);
+      this.specialElementsDetector = new SpecialElementsDetector(page);
+      this.fieldTypeDetector = new FieldTypeDetector(page);
+      this.clickHandler = new ClickHandler(page);
+      this.formSubmitHandler = new FormSubmitHandler(page);
   }
 
   private initializeFillers() {
@@ -44,6 +60,14 @@ export class PageManager {
       this.fillers['button'] = new RadioFiller(this.page);
   }
 
+  /**
+   * Get the underlying Playwright Page object
+   * Used by BehaviorFillerFactory to create filler instances
+   */
+  getPage(): Page {
+    return this.page;
+  }
+
   async extractHtml(): Promise<string> {
       try {
            const raw = await this.page.content();
@@ -54,106 +78,15 @@ export class PageManager {
       }
   }
 
+
   async detectSpecialElements(): Promise<DetectionResult> {
-      // Ported logic from toyVersion
-      return await this.page.evaluate(() => {
-        const result = { hasCaptcha: false, hasOtp: false, reason: '', selector: '' };
-
-        function isRelevantCaptcha(selector: string): boolean {
-            const elements = document.querySelectorAll(selector);
-            for (const el of Array.from(elements)) {
-                // 1. Must be inside a form
-                if (!el.closest('form')) continue;
-
-                // 2. Must be visible
-                const style = window.getComputedStyle(el);
-                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
-                if (el.getBoundingClientRect().height === 0) continue;
-
-                // 3. Must not be explicitly "invisible" type (reCAPTCHA v2 invisible)
-                if (el.getAttribute('data-size') === 'invisible') continue;
-                
-                return true;
-            }
-            return false;
-        }
-
-        // CAPTCHA
-        if (
-            isRelevantCaptcha('iframe[src*="google.com/recaptcha"]') ||
-            isRelevantCaptcha('.g-recaptcha, #g-recaptcha') ||
-            isRelevantCaptcha('iframe[src*="hcaptcha.com"]') ||
-            isRelevantCaptcha('.h-captcha') ||
-            isRelevantCaptcha('.cf-turnstile')
-        ) {
-            result.hasCaptcha = true;
-            result.reason = 'Standard Captcha found inside form';
-            return result;
-        }
-
-        // OTP
-        const otpInput = document.querySelector('input[name*="otp"], input[id*="otp"], input[placeholder*="otp"]');
-        if (otpInput) {
-            result.hasOtp = true;
-            result.selector = (otpInput as HTMLElement).id ? `#${(otpInput as HTMLElement).id}` : `[name="${(otpInput as HTMLInputElement).name}"]`;
-            result.reason = 'OTP input found';
-            return result;
-        }
-        
-        return result;
-      });
+      return await this.specialElementsDetector.detect();
   }
+
 
   // Detect field type from selector by querying the actual DOM element
   private async detectFieldType(selector: string, providedType: string): Promise<string> {
-    // If selector contains 'select', it's definitely a select
-    if (selector.toLowerCase().includes('select[') || selector.toLowerCase().includes('select#')) {
-      return 'select';
-    }
-    
-    // If selector contains 'input[type="radio"]' or similar
-    if (selector.includes('type="radio"') || selector.includes("type='radio'")) {
-      return 'radio';
-    }
-    
-    if (selector.includes('type="checkbox"') || selector.includes("type='checkbox'")) {
-      return 'checkbox';
-    }
-    
-    // Try to detect from DOM
-    try {
-      const elementType = await this.page.evaluate((sel) => {
-        const el = document.querySelector(sel);
-        if (!el) return null;
-        
-        const tagName = el.tagName.toLowerCase();
-        if (tagName === 'select') return 'select';
-        if (tagName === 'textarea') return 'textarea';
-        if (tagName === 'button') return 'button';
-        
-        if (tagName === 'input') {
-          const type = (el as HTMLInputElement).type.toLowerCase();
-          if (type === 'radio') return 'radio';
-          if (type === 'checkbox') return 'checkbox';
-          if (type === 'date') return 'date';
-          if (type === 'file') return 'file';
-          if (type === 'email') return 'email';
-          if (type === 'tel') return 'tel';
-          if (type === 'number') return 'number';
-          return 'text';
-        }
-        
-        return null;
-      }, selector);
-      
-      if (elementType) {
-        return elementType;
-      }
-    } catch {
-      // Ignore detection errors
-    }
-    
-    return providedType || 'text';
+    return await this.fieldTypeDetector.detect(selector, providedType);
   }
 
   async fillForm(fields: AutomatedField[]): Promise<void> {
@@ -181,69 +114,7 @@ export class PageManager {
 
   // Find and click the submit/next button in the form
   async clickSubmitButton(): Promise<boolean> {
-    try {
-      // Try multiple strategies to find submit button
-      const submitSelectors = [
-        'form button[type="submit"]',
-        'form input[type="submit"]',
-        'form button:not([type="button"])',
-        'button[type="submit"]',
-        'input[type="submit"]',
-        '.submit-btn',
-        '.btn-submit',
-        '[class*="submit"]',
-      ];
-      
-      // Try text-based matching with Playwright's getByRole/getByText
-      const textMatches = ['Submit', 'Next', 'Continue', 'Proceed', 'Go', 'Get Quote', 'View Plans'];
-      
-      // First try standard selectors
-      for (const selector of submitSelectors) {
-        try {
-          const btn = await this.page.$(selector);
-          if (btn && await btn.isVisible()) {
-            await btn.scrollIntoViewIfNeeded();
-            await btn.click();
-            logger.info(`Clicked submit button: ${selector}`);
-            return true;
-          }
-        } catch {
-          continue;
-        }
-      }
-      
-      // Try text-based matching
-      for (const text of textMatches) {
-        try {
-          const btn = this.page.getByRole('button', { name: text });
-          if (await btn.count() > 0 && await btn.first().isVisible()) {
-            await btn.first().click();
-            logger.info(`Clicked button by text: ${text}`);
-            return true;
-          }
-        } catch {
-          continue;
-        }
-      }
-      
-      // Last resort: find any button in form
-      try {
-        const formButton = await this.page.$('form button');
-        if (formButton && await formButton.isVisible()) {
-          await formButton.click();
-          logger.info('Clicked first form button');
-          return true;
-        }
-      } catch {
-        // Ignore
-      }
-      
-      logger.warn('No submit button found');
-      return false;
-    } catch (error) {
-      logger.error('Failed to click submit button:', error);
-      return false;
-    }
+    return await this.formSubmitHandler.clickSubmitButton();
   }
 
   /**
@@ -251,43 +122,7 @@ export class PageManager {
    * Resolves, asserts visibility, and clicks the first visible match.
    */
   async executeClick(selector: string, description?: string): Promise<boolean> {
-    try {
-      const locator = this.page.locator(selector);
-      const count = await locator.count();
-
-      if (count === 0) {
-        logger.warn(`No element found for selector: ${selector}`);
-        return false;
-      }
-
-      if (count > 1) {
-        logger.warn(`Multiple elements (${count}) found for selector: ${selector}. Using first visible one.`);
-      }
-
-      // Get first visible element
-      const target = locator.first();
-
-      // Wait for visibility
-      try {
-        await target.waitFor({ state: 'visible', timeout: 5000 });
-      } catch {
-        logger.warn(`Element not visible: ${selector}`);
-        return false;
-      }
-
-      await target.scrollIntoViewIfNeeded();
-      
-      logger.info(`Clicking element: ${description || selector}`);
-      await target.click({ force: false });
-      
-      // Small delay after click for React re-renders
-      // await this.page.waitForTimeout(500); // Removed for speed
-      
-      return true;
-    } catch (error) {
-      logger.error(`Failed to click ${selector}:`, error);
-      return false;
-    }
+    return await this.clickHandler.executeClick(selector, description);
   }
 
   /**
@@ -295,79 +130,14 @@ export class PageManager {
    * This is safer for React SPAs where multiple buttons may share attributes.
    */
   async clickButtonWithText(selector: string, expectedText: string): Promise<boolean> {
-    try {
-      const locator = this.page.locator(selector).filter({
-        hasText: expectedText,
-      });
-
-      const count = await locator.count();
-      if (count === 0) {
-        logger.warn(`No button found with selector "${selector}" and text "${expectedText}"`);
-        return false;
-      }
-
-      const target = locator.first();
-      await target.waitFor({ state: 'visible', timeout: 5000 });
-      await target.scrollIntoViewIfNeeded();
-      
-      logger.info(`Clicking button: "${expectedText}" (${selector})`);
-      await target.click();
-      
-      // await this.page.waitForTimeout(500); // Speed up match
-      return true;
-    } catch (error) {
-      logger.error(`Failed to click button with text "${expectedText}":`, error);
-      return false;
-    }
+    return await this.clickHandler.clickButtonWithText(selector, expectedText);
   }
 
   /**
    * Execute a list of actions from Gemini response.
-   * Used for dashboard/navigation pages.
-   * Includes multiple fallback strategies for fault tolerance.
    */
   async executeActions(actions: { type: string; selector?: string; description: string; expectedText?: string }[]): Promise<boolean> {
-    for (const action of actions) {
-      if (action.type === 'click') {
-        let clicked = false;
-        
-        // Strategy 1: Use selector + expectedText if both provided
-        if (action.selector && action.expectedText && !action.selector.includes(':contains') && !action.selector.includes(':has(')) {
-          clicked = await this.clickButtonWithText(action.selector, action.expectedText);
-        }
-        
-        // Strategy 2: If expectedText exists, try getByRole('button') with name
-        if (!clicked && action.expectedText) {
-          clicked = await this.clickByRole('button', action.expectedText);
-        }
-        
-        // Strategy 3: Try getByText as last resort
-        if (!clicked && action.expectedText) {
-          clicked = await this.clickByText(action.expectedText);
-        }
-        
-        // Strategy 4: If no expectedText but selector exists, try plain selector
-        if (!clicked && action.selector && !action.selector.includes(':contains') && !action.selector.includes(':has(')) {
-          clicked = await this.executeClick(action.selector, action.description);
-        }
-        
-        if (!clicked) {
-          logger.warn(`Action failed (all strategies): ${action.description}`);
-          return false;
-        }
-        
-        // Wait for navigation/render after click
-        try {
-          await this.page.waitForLoadState('domcontentloaded', { timeout: 5000 });
-        } catch {
-          // Timeout is okay, page might not navigate
-        }
-      } else if (action.type === 'wait') {
-        // await this.page.waitForTimeout(500); // Removed for speed per user request
-      }
-      // 'submit' type handled separately via clickSubmitButton
-    }
-    return true;
+    return await this.clickHandler.executeActions(actions);
   }
 
   /**
@@ -375,28 +145,7 @@ export class PageManager {
    * Most reliable for React SPAs.
    */
   async clickByRole(role: 'button' | 'link' | 'checkbox', name: string): Promise<boolean> {
-    try {
-      const locator = this.page.getByRole(role, { name, exact: false });
-      const count = await locator.count();
-      
-      if (count === 0) {
-        logger.debug(`No ${role} found with name "${name}"`);
-        return false;
-      }
-      
-      const target = locator.first();
-      await target.waitFor({ state: 'visible', timeout: 5000 });
-      await target.scrollIntoViewIfNeeded();
-      
-      logger.info(`Clicking ${role} by name: "${name}"`);
-      await target.click();
-      
-      // await this.page.waitForTimeout(500);
-      return true;
-    } catch (error) {
-      logger.debug(`clickByRole failed for ${role}:"${name}":`, error);
-      return false;
-    }
+    return await this.clickHandler.clickByRole(role, name);
   }
 
   /**
@@ -404,49 +153,9 @@ export class PageManager {
    * Fallback when role-based matching fails.
    */
   async clickByText(text: string): Promise<boolean> {
-    try {
-      const locator = this.page.getByText(text, { exact: false });
-      const count = await locator.count();
-      
-      if (count === 0) {
-        logger.debug(`No element found with text "${text}"`);
-        return false;
-      }
-      
-      // Find a clickable element (button, link, or element with onClick)
-      const target = locator.first();
-      await target.waitFor({ state: 'visible', timeout: 5000 });
-      await target.scrollIntoViewIfNeeded();
-      
-      logger.info(`Clicking element by text: "${text}"`);
-      await target.click();
-      
-      // await this.page.waitForTimeout(500);
-      return true;
-    } catch (error) {
-      logger.debug(`clickByText failed for "${text}":`, error);
-      return false;
-    }
+    return await this.clickHandler.clickByText(text);
   }
   async captureScreenshot(): Promise<string> {
-    try {
-      // Set fixed viewport for consistency and to control token usage (width aspect)
-      await this.page.setViewportSize({ width: 1280, height: 800 });
-      
-      // Capture full page screenshot
-      // Note: Playwright types might return Buffer even with encoding set in options object for some versions,
-      // but at runtime 'base64' encoding returns a string.
-      const result = await this.page.screenshot({ 
-        type: 'jpeg', 
-        quality: 50, 
-        fullPage: true, 
-        scale: 'css' 
-      });
-      
-      return result.toString('base64');
-    } catch (error) {
-      logger.error('Failed to capture screenshot:', error);
-      return '';
-    }
+    return await this.screenshotCapture.capture();
   }
 }

@@ -1,4 +1,7 @@
+// HTML extraction and cleaning utilities
 
+// Cleans HTML by removing scripts, styles, svgs, iframes, and other noise
+// Extracts main content area for AI processing
 export function cleanHtml(html: string): string {
   // 1. Remove scripts, styles, svgs, iframes, comments
   let cleaned = html

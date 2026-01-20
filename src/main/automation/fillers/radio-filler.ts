@@ -1,125 +1,175 @@
 
-import { BaseFiller, AutomatedField } from './base-filler';
-import { logger } from '../../core/logger';
+import { BaseFiller, AutomatedField, FillResult, FillStrategy, UILibrary, VerificationResult } from './base-filler';
 
 export class RadioFiller extends BaseFiller {
-  async fill(field: AutomatedField): Promise<boolean> {
+  /**
+   * Strategy 1: Native Playwright check
+   */
+  protected async tryNativeFill(field: AutomatedField): Promise<FillResult> {
     try {
-      // 1. Try clicking the element directly with Playwright
-      // This handles radio buttons, button-style radios, and custom components
-      try {
-        await this.scrollToElement(field.selector);
-        await this.page.click(field.selector, { timeout: 5000 });
-        logger.info(`Clicked radio/button: ${field.fieldLabel} (${field.selector})`);
-        return true;
-      } catch {
-        // Direct click failed, try other methods
-      }
+      await this.scrollToElement(field.selector);
+      await this.page.check(field.selector, { timeout: 3000 });
+      
+      return {
+        success: true,
+        strategy: FillStrategy.NATIVE,
+        uiLibrary: await this.detectLibrary(field.selector),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        strategy: FillStrategy.NATIVE,
+        error: String(error),
+        domSnapshot: await this.captureDOMSnapshot(field.selector),
+      };
+    }
+  }
 
-      // 2. Try by Value - find radio with matching value
-      if (field.value) {
-        try {
-          // Try to find input[type="radio"] with the value
-          const radioSelector = `input[type="radio"][value="${field.value}"]`;
-          const radio = await this.page.$(radioSelector);
-          if (radio) {
-            await radio.check();
-            logger.info(`Checked radio by value: ${field.value}`);
-            return true;
-          }
-        } catch {
-          // Continue
-        }
-
-        // 3. Try button-style element with text matching value
-        try {
-          // Use getByRole to find button with the text
-          const btn = this.page.getByRole('button', { name: field.value as string });
-          if (await btn.count() > 0 && await btn.first().isVisible()) {
-            await btn.first().click();
-            logger.info(`Clicked button by text: ${field.value}`);
-            return true;
-          }
-        } catch {
-          // Continue
+  /**
+   * Strategy 2: Direct DOM manipulation
+   */
+  protected async tryDomFill(field: AutomatedField): Promise<FillResult> {
+    try {
+      const success = await this.page.evaluate((selector) => {
+        const el = document.querySelector(selector);
+        if (!el) return false;
+        
+        if (el instanceof HTMLInputElement && el.type === 'radio') {
+          el.checked = true;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          return true;
         }
         
-        // 4. Try any element with text matching
-        try {
-          const textElement = this.page.getByText(field.value as string, { exact: true });
-          if (await textElement.count() > 0 && await textElement.first().isVisible()) {
-            await textElement.first().click();
-            logger.info(`Clicked element by text: ${field.value}`);
-            return true;
-          }
-        } catch {
-          // Continue
-        }
-      }
+        return false;
+      }, field.selector);
       
-      // 5. Try clicking by Label Text (for semantic forms)
-      if (field.fieldLabel) {
-        const clicked = await this.page.evaluate((labelText) => {
-             const labels = Array.from(document.querySelectorAll('label'));
-             const matchingLabel = labels.find(l => 
-                l.textContent?.trim() === labelText || l.textContent?.includes(labelText)
-             );
-             
-             if (matchingLabel) {
-                 // Check 'for' attribute
-                 const forId = matchingLabel.getAttribute('for');
-                 if (forId) {
-                     const input = document.getElementById(forId);
-                     if (input && (input as HTMLInputElement).type === 'radio') {
-                         (input as HTMLElement).click();
-                         return true;
-                     }
-                 }
-                 // Check nested
-                 const nestedInput = matchingLabel.querySelector('input[type="radio"]');
-                 if (nestedInput) {
-                     (nestedInput as HTMLElement).click();
-                     return true;
-                 }
-                 // Click the label itself
-                 (matchingLabel as HTMLElement).click();
-                 return true;
-             }
-             return false;
-        }, field.fieldLabel);
+      return {
+        success,
+        strategy: FillStrategy.DOM,
+        error: success ? undefined : 'Element not found or not a radio button',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        strategy: FillStrategy.DOM,
+        error: String(error),
+      };
+    }
+  }
 
-        if (clicked) {
-             logger.info(`Clicked radio/button by label: ${field.fieldLabel}`);
-             return true;
-        }
-      }
-
-      // 6. Last resort - use JavaScript to click
-      if (field.selector) {
-        try {
-          const clicked = await this.page.evaluate((sel) => {
-            const el = document.querySelector(sel);
-            if (el) {
-              (el as HTMLElement).click();
+  /**
+   * Strategy 3: UI Library-specific handling (custom radio buttons)
+   */
+  protected async tryUILibraryFill(field: AutomatedField): Promise<FillResult> {
+    const library = await this.detectLibrary(field.selector);
+    
+    try {
+      switch (library) {
+        case UILibrary.BOOTSTRAP:
+          // Bootstrap custom radio: click the label or parent
+          const clicked = await this.page.evaluate((selector) => {
+            const radio = document.querySelector(selector) as HTMLInputElement;
+            if (!radio) return false;
+            
+            // Try clicking the parent label
+            const label = radio.closest('label') || radio.parentElement?.querySelector('label');
+            if (label) {
+              (label as HTMLElement).click();
               return true;
             }
+            
             return false;
           }, field.selector);
           
-          if (clicked) {
-            logger.info(`Clicked via JS: ${field.selector}`);
-            return true;
+          if (!clicked) {
+            return {
+              success: false,
+              strategy: FillStrategy.UI_LIBRARY,
+              uiLibrary: library,
+              error: 'Bootstrap radio parent label not found',
+            };
           }
-        } catch {
-          // Ignore
-        }
+          break;
+          
+        case UILibrary.MATERIAL_UI:
+          // MUI radio: click the parent span or label
+          await this.page.click(`${field.selector} ~ .MuiRadio-root`, { timeout: 2000 });
+          break;
+          
+        default:
+          // No specific handler
+          return {
+            success: false,
+            strategy: FillStrategy.UI_LIBRARY,
+            uiLibrary: library,
+            error: `No specific handler for library: ${library}`,
+          };
       }
       
-      logger.warn(`Could not fill radio/button: ${field.fieldLabel}`);
-      return false;
+      return {
+        success: true,
+        strategy: FillStrategy.UI_LIBRARY,
+        uiLibrary: library,
+      };
     } catch (error) {
-      logger.error(`Failed to fill radio field ${field.fieldLabel}:`, error);
-      return false;
+      return {
+        success: false,
+        strategy: FillStrategy.UI_LIBRARY,
+        uiLibrary: library,
+        error: String(error),
+      };
+    }
+  }
+
+  /**
+   * Strategy 4: Keyboard-based (click + Space)
+   */
+  protected async tryKeyboardFill(field: AutomatedField, retryCount: number): Promise<FillResult> {
+    try {
+      if (retryCount > 0) {
+        await this.page.keyboard.press('Escape');
+        await this.page.waitForTimeout(100);
+      }
+      
+      // Focus and select with Space key
+      await this.page.click(field.selector);
+      await this.page.waitForTimeout(100);
+      await this.page.keyboard.press('Space');
+      
+      return {
+        success: true,
+        strategy: FillStrategy.KEYBOARD,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        strategy: FillStrategy.KEYBOARD,
+        error: String(error),
+      };
+    }
+  }
+
+  /**
+   * Verification: Check if radio is checked
+   */
+  protected async verifyFill(field: AutomatedField): Promise<VerificationResult> {
+    try {
+      const isChecked = await this.page.isChecked(field.selector);
+      
+      return {
+        passed: isChecked,
+        actual: String(isChecked),
+        expected: 'true',
+        reason: isChecked ? undefined : 'Radio button not checked after fill',
+      };
+    } catch (error) {
+      return {
+        passed: false,
+        actual: undefined,
+        expected: 'true',
+        reason: `Verification failed: ${String(error)}`,
+      };
     }
   }
 }

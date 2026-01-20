@@ -5,31 +5,13 @@ import { logger, geminiPromptLogger } from '../core/logger';
 import fs from 'fs';
 import path from 'path';
 
-export interface AIAnalysisResult {
-  fields: {
-    selector: string;
-    value: string;
-    reason: string;
-    fieldName: string;
-    fieldType?: string;
-  }[];
-  actions: {
-    type: 'click' | 'wait' | 'submit';
-    selector?: string;
-    description: string;
-    expectedText?: string; // For safer button clicking
-  }[];
-  captcha: {
-    detected: boolean;
-    isInsideForm: boolean;
-  };
-  otp: {
-    detected: boolean;
-    selector?: string;
-  };
-  pageType: 'dashboard' | 'form' | 'confirmation' | 'unknown';
-  isFormPage: boolean;
-  pageSummary: string;
+import { BehaviorFormMapping } from '../../shared/types';
+import { type } from 'os';
+import { selectors } from 'playwright-core';
+import { text } from 'stream/consumers';
+
+export interface AIAnalysisResult extends BehaviorFormMapping {
+  // Extends BehaviorFormMapping with backward compatibility fields
 }
 
 export class AIService {
@@ -63,75 +45,111 @@ export class AIService {
         : 'No documents attached';
 
       const prompt = `
-        You are an intelligent automation agent filling out visa/immigration forms.
-        
-        TASK:
-        1. First, classify the page type (dashboard, form, confirmation, or unknown)
-        2. If it's a DASHBOARD page: identify navigation buttons/links to click (e.g., "Create New Application")
-        3. If it's a FORM page: map form fields to the provided client data
-        
-        CLIENT EXTRACTED DATA:
-        ${JSON.stringify(extractedData, null, 2)}
-        
-        ATTACHED DOCUMENTS (use these for file upload fields):
-        ${documentListStr}
-        NOTE: For file upload fields, set the "value" to the document name that best matches the field requirement.
-        Match by category: passport/identity for ID uploads, education for degree/certificate uploads, etc.
-        
-        CUSTOM INSTRUCTIONS:
-        ${customPrompt || 'None'}
+          You are an intelligent automation agent that DESCRIBES form fields and actions.
+          Your job is to identify INTENT and BEHAVIOR, not to dictate execution.
 
-        ${screenshotBase64 ? 'CRITICAL INSTRUCTION: An image of the webpage is attached.\n1. Use the IMAGE to understand the visual layout, context, and which form corresponds to the user\'s intent.\n2. Use the HTML provided below strictly for extracting correct CSS selectors.\n3. If there is a visual conflict between HTML and Image, prioritize the Image for "Context" but the HTML for "Selectors".' : ''}
-        
-        HTML CONTEXT:
-        ${html.substring(0, 100000)}
+          TASK:
+          1. Classify the page type (dashboard, form, confirmation, or unknown)
+          2. If DASHBOARD: identify the SINGLE most relevant primary action the user should take next (only 1 action)
+          3. If FORM: describe each field's BEHAVIOR and map to client data with CONFIDENCE
 
-        OUTPUT INSTRUCTIONS:
-        Return a valid JSON object with the following structure:
-        {
-          "pageType": "dashboard" | "form" | "confirmation" | "unknown",
-          "pageSummary": "Brief description of the page",
-          "isFormPage": boolean,
-          "fields": [
-            { 
-              "selector": "SIMPLE CSS selector ONLY (e.g. button[data='green'], #id, .class)", 
-              "value": "Value to fill based on client data", 
-              "fieldName": "Name of the field", 
-              "fieldType": "text|select|radio|checkbox|date|file|email|tel",
-              "reason": "Why this value was chosen" 
-            }
-          ],
-          "actions": [
-            { 
-              "type": "click|submit|wait", 
-              "selector": "SIMPLE CSS selector ONLY - NO :contains(), NO :has(), NO jQuery selectors", 
-              "expectedText": "Exact visible button text (REQUIRED - used for matching)",
-              "description": "What this action does" 
-            }
-          ],
-          "captcha": {
-            "detected": boolean,
-            "isInsideForm": boolean
-          },
-          "otp": {
-            "detected": boolean,
-            "selector": "CSS selector for OTP input if found"
+          CLIENT EXTRACTED DATA:
+          ${JSON.stringify(extractedData, null, 2)}
+
+          ATTACHED DOCUMENTS (use these for file upload fields):
+          ${documentListStr}
+          NOTE: For file upload fields, set the "expectedValue" to the document name that best matches the field requirement.
+          Match by category: passport/identity for ID uploads, education for degree/certificate uploads, etc.
+
+          CUSTOM INSTRUCTIONS:
+          ${customPrompt || 'None'}
+
+          ${screenshotBase64 ? `CRITICAL INSTRUCTION: An image of the webpage is attached.\n1. Use the IMAGE to understand the visual layout, context, and which form corresponds to the user's intent. Use the HTML provided below strictly for extracting correct CSS selectors.\n3. If there is a visual conflict between HTML and Image, prioritize the Image for "Context" but the HTML for "Selectors".` : ''}
+
+          HTML CONTEXT:
+          ${html.substring(0, 100000)}
+
+          FIELD BEHAVIOR TYPES (CRITICAL - choose the most specific):
+          - "text_entry" = simple text input
+          - "masked_input" = formatted input (phone, SSN, postal code with mask)
+          - "search_and_select" = autocomplete/searchable dropdown (can type to filter)
+          - "single_choice" = static dropdown or radio group (no search)
+          - "date_picker" = calendar widget (look for .datepicker, role="datepicker")
+          - "boolean_toggle" = toggle switch (look for .toggle, .switch classes)
+          - "consent_checkbox" = terms/conditions checkbox
+          - "otp_group" = multiple OTP inputs (e.g., 4-6 boxes for verification code)
+          - "range_slider" = numeric slider control
+          - "file_upload" = file upload field
+
+          CONFIDENCE LEVELS:
+          - "high" = Clear label match + placeholder/context confirms (90%+ sure) → Auto-fill
+          - "medium" = Label matches, reasonable inference (60-90%) → May need review
+          - "low" = Uncertain or guessed (<60%) → Require human verification
+
+          MISSING DATA HANDLING:
+          - If client data is MISSING for a field: set "expectedValue" to "__MISSING__" and "status" to "missing_data"
+          - NEVER invent fake/placeholder data
+          - Be explicit about what you don't know
+
+          OUTPUT INSTRUCTIONS:
+          Return a valid JSON object with this structure:
+          {
+            "pageType": "dashboard" | "form" | "confirmation" | "unknown",
+            "pageSummary": "Brief description",
+            "isFormPage": boolean,
+            "fields": [
+              {
+                "selector": "SIMPLE CSS selector (#id, .class, input[name='x'])",
+                "fieldName": "Human-readable field name",
+                "behavior": "text_entry|masked_input|search_and_select|single_choice|date_picker|boolean_toggle|consent_checkbox|otp_group|range_slider|file_upload",
+                "intent": "semantic_name (e.g. citizenship_country, passport_number)",
+                "expectedValue": "value from client data OR '__MISSING__'",
+                "confidence": "high|medium|low",
+                "reason": "Why this mapping (explain confidence)",
+                "status": "ready|missing_data|low_confidence",
+                "constraints": { "required": boolean } (optional)
+              }
+            ],
+            "actions": [
+              {
+                "intent": "primary_navigation|secondary_action|modal_confirm|create_new",
+                "description": "What this accomplishes",
+                "expectedText": "Visible button text (for matching)",
+                "selector": "SIMPLE CSS selector (preferred) or leave empty to use text matching",
+                "confidence": "high|medium|low"
+              }
+            ],
+            "captcha": { "detected": boolean },
+            "otp": { "detected": boolean, "behavior": "otp_group", "confidence": "high|medium|low" }
           }
-        }
 
-        CRITICAL RULES:
-        1. For DASHBOARD pages: actions array MUST contain ONLY ONE (1) primary navigation action (e.g. "Create New", "Start Application"). Do NOT return multiple options. Prioritize the most logical "Start" button.
-        2. For FORM pages: fields array should have ALL VISIBLE form fields - do NOT skip any input, select, or checkbox
-        3. SELECTOR FORMAT: Use ONLY valid CSS selectors. NEVER use :contains(), :has(), or jQuery pseudo-selectors - they are INVALID
-        4. For click actions: Use a SIMPLE selector (e.g. "button[data='green']", ".buttons_border") and put the button text in "expectedText"
-        5. IMPORTANT: Map EVERY form field you see in the HTML, even if you don't have exact data:
-           - For emergency contact fields: use someone from the family info or make reasonable entries
-           - For unknown required fields: provide a reasonable placeholder value
-           - NEVER skip fields just because data is missing - provide something reasonable
-        6. Detect CAPTCHA only if it's inside the form and blocking submission
-        7. Return raw JSON only, no markdown formatting
-        8. For checkboxes that say "agree", "accept", "confirm", etc: set value to "true"
-      `;
+          CRITICAL RULES:
+          1. DESCRIBE, DON'T COMMAND: Identify what fields/actions MEAN, not how to execute them
+          2. SINGLE ACTION RULE (MANDATORY FOR ALL PAGES):
+            - The \"actions\" array MUST ALWAYS contain EXACTLY ONE action
+            - Choose the SINGLE most relevant primary action for this page
+            - Dashboard: the main navigation button (e.g., \"Register New Student\", \"Create Application\")
+            - Form: the primary submit button (e.g., \"Next\", \"Submit\", \"Continue\", \"Save\")
+            - Do NOT include secondary actions like filters, search, archive, or cancel buttons
+            - Focus on the action that progresses the user toward completing the application
+          3. DASHBOARD OUTPUT CONSTRAINT:
+            - If pageType = \"dashboard\":
+              - fields MUST be an empty array: \"fields\": []
+              - actions MUST contain EXACTLY ONE item with intent=\"primary_navigation\" or intent=\"create_new\"
+          4. FORM OUTPUT CONSTRAINT:
+            - If pageType = \"form\":
+              - MAP ALL VISIBLE FORM FIELDS (not dashboard filters or search fields)
+              - Include fields even if missing data (use \"__MISSING__\")
+              - actions MUST contain EXACTLY ONE item (the primary submit/next button)
+          5. CONFIDENCE IS KEY: low confidence → require review (status=\"low_confidence\")
+          6. NO FAKE DATA: Never invent values. \"__MISSING__\" is better than a guess
+          7. SELECTORS: Simple CSS only (#id, .class, input[name=\"x\"]) - NO :contains() or :has()
+          8. BEHAVIOR OVER TYPE: Use "search_and_select" only when it's truly searchable/autocomplete
+          9. Terms checkboxes: behavior="consent_checkbox", confidence="high"
+          10. OTP fields: behavior="otp_group", selector should match ALL OTP inputs
+          11. Return raw JSON only, no markdown formatting
+          `;
+
 
       // Log prompt to gemini_prompt.log
       geminiPromptLogger.info(

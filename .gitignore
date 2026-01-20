@@ -39,3 +39,8 @@ coverage/
 
 # Misc
 *.tsbuildinfo
+
+# resources
+resources/htmlstructures/
+resources/temp/
+resources/debug*
