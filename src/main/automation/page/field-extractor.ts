@@ -251,8 +251,13 @@ export class FieldExtractor {
 
       // Regular field processing
       const field = await this.buildField(candidate, i);
+
+      // Apply significance filter: drop fields that are not useful
+      if (!this.shouldIncludeField(field)) {
+        continue;
+      }
+
       const key = this.getFieldKey(field);
-      
       // Deduplicate by semantic key
       if (!seenKeys.has(key)) {
         seenKeys.add(key);
@@ -296,6 +301,36 @@ export class FieldExtractor {
       max: candidate.max || undefined,
       pattern: candidate.pattern || undefined,
     };
+  }
+
+  /**
+   * Decide whether a normalized field should be kept in the final HtmlField[]
+   * 
+   * Rules (from user requirements):
+   * - Drop fields of type "color" (not meaningful for automation)
+   * - Drop fields where ALL of the following are true:
+   *     - placeholder is empty/undefined
+   *     - labelText is empty/undefined
+   *     - ariaLabel is empty/undefined
+   *     - required is false
+   */
+  private shouldIncludeField(field: HtmlField): boolean {
+    // Ignore color pickers entirely
+    if (field.type === 'color') {
+      return false;
+    }
+
+    const hasPlaceholder = !!field.placeholder && field.placeholder.trim().length > 0;
+    const hasLabelText = !!field.labelText && field.labelText.trim().length > 0;
+    const hasAriaLabel = !!field.ariaLabel && field.ariaLabel.trim().length > 0;
+
+    // If field is not required AND has no placeholder, no label, and no aria-label,
+    // treat it as insignificant and drop it from the structure.
+    if (!field.required && !hasPlaceholder && !hasLabelText && !hasAriaLabel) {
+      return false;
+    }
+
+    return true;
   }
 
   /**
