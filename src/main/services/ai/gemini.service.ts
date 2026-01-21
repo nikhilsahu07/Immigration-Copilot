@@ -169,7 +169,7 @@ export class GeminiService {
   }
 
   /**
-   * Phase 2: Contract-first JSON parsing - NO automatic repair
+   * Contract-first JSON parsing - NO automatic repair
    * 
    * The model MUST return valid JSON. If it doesn't, we fail explicitly
    * rather than trying to "fix" broken responses.

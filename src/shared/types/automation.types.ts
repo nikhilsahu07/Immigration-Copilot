@@ -15,6 +15,38 @@ export type PauseReason =
   | 'error'
   | 'user_paused';
 
+// Workflow step for a single portal page during automation.
+// This is used for checkpoint-based pause/resume.
+export type WorkflowStep =
+  | 'initializing'
+  | 'page_loaded'
+  | 'fields_extracted'
+  | 'screenshot_captured'
+  | 'ai_analysis_done'
+  | 'fields_filling'
+  | 'fields_filled'
+  | 'waiting_approval'
+  | 'submitting'
+  | 'navigation_complete';
+
+// Checkpoint snapshot to support efficient pause/resume.
+// NOTE: We intentionally keep aiResult as `any` to avoid tight coupling
+// to the AI mapping response type while still persisting it for resume.
+export interface AutomationCheckpoint {
+  step: WorkflowStep;
+  currentUrl: string;
+  htmlFields?: HtmlField[];
+  screenshotBase64?: string;
+  aiResult?: any;
+  fillResults?: Array<{
+    fieldName: string;
+    success: boolean;
+    error?: string;
+  }>;
+  currentMapping?: FormMapping;
+  timestamp: Date;
+}
+
 export interface AutomationJob extends BaseEntity, WithCompany, WithAgent {
   clientId: string;
   portalId: string;
@@ -32,6 +64,7 @@ export interface AutomationJob extends BaseEntity, WithCompany, WithAgent {
   startedAt?: Date;
   completedAt?: Date;
   duration?: number;
+  checkpoint?: AutomationCheckpoint;
 }
 
 export interface PageProcessed {

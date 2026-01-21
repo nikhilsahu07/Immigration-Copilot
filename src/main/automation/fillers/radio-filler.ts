@@ -66,7 +66,7 @@ export class RadioFiller extends BaseFiller {
     
     try {
       switch (library) {
-        case UILibrary.BOOTSTRAP:
+        case UILibrary.BOOTSTRAP: {
           // Bootstrap custom radio: click the label or parent
           const clicked = await this.page.evaluate((selector) => {
             const radio = document.querySelector(selector) as HTMLInputElement;
@@ -91,6 +91,7 @@ export class RadioFiller extends BaseFiller {
             };
           }
           break;
+        }
           
         case UILibrary.MATERIAL_UI:
           // MUI radio: click the parent span or label

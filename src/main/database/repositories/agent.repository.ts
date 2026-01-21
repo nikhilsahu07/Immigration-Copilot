@@ -1,3 +1,4 @@
+
 import { Collection, ObjectId, Filter, UpdateFilter } from 'mongodb';
 import { getDatabase, COLLECTIONS } from '../index';
 import { Agent, AgentPublic, CreateAgentInput, UpdateAgentInput } from '../../../shared/types';
@@ -9,7 +10,7 @@ export class AgentRepository {
   }
 
   private toPublic(agent: Agent): AgentPublic {
-    const { passwordHash, ...publicAgent } = agent;
+    const { passwordHash: _passwordHash, ...publicAgent } = agent;
     return publicAgent as AgentPublic;
   }
 

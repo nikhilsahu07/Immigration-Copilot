@@ -1,4 +1,5 @@
 
+
 import { BaseFiller, AutomatedField, FillResult, FillStrategy, UILibrary, VerificationResult } from './base-filler';
 
 export class DateFiller extends BaseFiller {
@@ -72,7 +73,7 @@ export class DateFiller extends BaseFiller {
       const dateString = this.normalizeDate(field.value);
       
       switch (library) {
-        case UILibrary.BOOTSTRAP:
+        case UILibrary.BOOTSTRAP: {
           // Bootstrap datepicker: set via data API if available
           const bootstrapSuccess = await this.page.evaluate(({ sel, val }) => {
             try {
@@ -92,6 +93,7 @@ export class DateFiller extends BaseFiller {
             await this.page.fill(field.selector, dateString);
           }
           break;
+        }
           
         case UILibrary.MATERIAL_UI:
           // MUI DatePicker: click and type
@@ -187,7 +189,7 @@ export class DateFiller extends BaseFiller {
   /**
    * Normalize date to YYYY-MM-DD format
    */
-  private normalizeDate(dateValue: any): string {
+  private normalizeDate(dateValue: unknown): string {
     if (!dateValue) return '';
     
     const dateStr = String(dateValue);

@@ -1,3 +1,4 @@
+
 import { Collection, ObjectId, Filter, UpdateFilter } from 'mongodb';
 import { getDatabase, COLLECTIONS } from '../index';
 import { Company, CreateCompanyInput, UpdateCompanyInput } from '../../../shared/types';

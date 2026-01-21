@@ -1,6 +1,7 @@
+
 import { Collection, ObjectId, Filter, UpdateFilter } from 'mongodb';
 import { getDatabase, COLLECTIONS } from '../index';
-import { AutomationJob, CreateJobInput, JobStatus, PauseReason, PageProcessed, PaginationParams, PaginatedResult } from '../../../shared/types';
+import { AutomationJob, AutomationCheckpoint, CreateJobInput, JobStatus, PauseReason, PageProcessed, PaginationParams, PaginatedResult } from '../../../shared/types';
 import { logger } from '../../core/logger';
 
 export class AutomationJobRepository {
@@ -140,6 +141,36 @@ export class AutomationJobRepository {
     );
   }
 
+  /**
+   * Persist a checkpoint snapshot for pause/resume.
+   */
+  async saveCheckpoint(id: string, checkpoint: AutomationCheckpoint): Promise<void> {
+    await this.collection.updateOne(
+      { _id: new ObjectId(id) } as any,
+      { $set: { checkpoint, updatedAt: new Date() } } as UpdateFilter<AutomationJob>
+    );
+    logger.info(`Automation checkpoint saved for job ${id} at step ${checkpoint.step}`);
+  }
+
+  /**
+   * Read the latest checkpoint snapshot for a job.
+   */
+  async getCheckpoint(id: string): Promise<AutomationCheckpoint | null> {
+    const job = await this.findById(id);
+    return job?.checkpoint ?? null;
+  }
+
+  /**
+   * Clear any stored checkpoint for a job.
+   */
+  async clearCheckpoint(id: string): Promise<void> {
+    await this.collection.updateOne(
+      { _id: new ObjectId(id) } as any,
+      { $unset: { checkpoint: '' }, $set: { updatedAt: new Date() } } as unknown as UpdateFilter<AutomationJob>
+    );
+    logger.info(`Automation checkpoint cleared for job ${id}`);
+  }
+
   async setError(id: string, errorLog: string): Promise<void> {
     await this.collection.updateOne(
       { _id: new ObjectId(id) } as any,
@@ -175,10 +206,9 @@ export class AutomationJobRepository {
     return counts;
   }
   async update(id: string, companyId: string, input: Partial<AutomationJob>): Promise<AutomationJob | null> {
-    const updateData = { ...input, updatedAt: new Date() };
+    const updateData: Partial<AutomationJob> = { ...input, updatedAt: new Date() };
     // Remove _id if present to avoid Mongo error
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (updateData as any)._id;
+    delete (updateData as Partial<AutomationJob> & { _id?: unknown })._id;
 
     const result = await this.collection.findOneAndUpdate(
       { _id: new ObjectId(id), companyId } as any,

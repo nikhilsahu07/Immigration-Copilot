@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 import type { Configuration } from 'webpack';
 import { rules } from './webpack.rules';
 import path from 'path';

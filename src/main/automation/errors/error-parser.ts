@@ -6,6 +6,7 @@ export class ErrorParser {
   /**
    * Parse Gemini API errors into user-friendly messages
    */
+  // 
   static parseGeminiError(error: any): { 
     title: string; 
     message: string; 

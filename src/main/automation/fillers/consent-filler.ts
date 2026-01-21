@@ -1,6 +1,6 @@
 
 import { CheckboxFiller } from './checkbox-filler';
-import { AutomatedField, FillResult, FillStrategy, VerificationResult } from './base-filler';
+import { AutomatedField, VerificationResult } from './base-filler';
 
 /**
  * ConsentFiller - Specialized checkbox for terms & conditions

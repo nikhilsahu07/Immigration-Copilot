@@ -101,7 +101,11 @@ export const automationFillingLogger = createPlainFileLogger('automation_filling
 export const automationMappingLogger = createPlainFileLogger('automation_mapping.log');
 export const automationPageLogger = createPlainFileLogger('automation_page.log');
 
-// Phase 2: New dedicated loggers for parallel batch and field fill operations
+// Loop & checkpoint specific logs for pause/resume debugging
+export const automationLoopLogger = createPlainFileLogger('automation_loop.log');
+export const automationCheckpointLogger = createPlainFileLogger('automation_checkpoint.log');
+
+// New dedicated loggers for parallel batch and field fill operations
 export const automationBatchLogger = createPlainFileLogger('automation_batch.log');
 export const fieldFillLogger = createPlainFileLogger('field_fill.log');
 

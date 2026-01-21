@@ -3,7 +3,7 @@ import { logger } from '../../core/logger';
 /**
  * ConcurrencyPool - Run async tasks with a maximum concurrency limit
  * 
- * Phase 2: Parallel field filling with hard cap of 10 concurrent executions.
+ * Parallel field filling with hard cap of 10 concurrent executions.
  * Ensures controlled parallelism to avoid overwhelming the browser or portal.
  */
 

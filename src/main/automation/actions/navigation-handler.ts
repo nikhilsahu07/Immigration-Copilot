@@ -16,6 +16,7 @@ export class NavigationHandler {
   /**
    * Execute navigation actions for dashboard pages
    */
+  // 
   async executeNavigation(actions: any[]): Promise<boolean> {
     if (actions.length === 0) {
       logger.warn('No navigation actions found for dashboard page');

@@ -19,7 +19,7 @@ export class AIService {
 
   async analyzePageAndMapFields(
     htmlFields: HtmlField[], 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // 
     extractedData: any,
     documentList: { name: string; category: string }[],
     customPrompt?: string,
@@ -37,7 +37,7 @@ export class AIService {
           Your job is to identify INTENT and BEHAVIOR, not to dictate execution.
 
           ===============================================================================
-          CRITICAL CONTRACT REQUIREMENTS (Phase 2):
+          CRITICAL CONTRACT REQUIREMENTS:
           ===============================================================================
           
           1. OUTPUT FORMAT: Return ONLY a single valid JSON object. NO explanations, NO markdown except code fences, NO multiple candidates.
@@ -76,7 +76,9 @@ export class AIService {
           - "text_entry" = simple text input
           - "masked_input" = formatted input (phone, SSN, postal code with mask)
           - "search_and_select" = autocomplete/searchable dropdown (can type to filter)
-          - "single_choice" = static dropdown or radio group (no search)
+          - "single_choice_dropdown" = static dropdown/select (no search)
+          - "single_choice_radio" = radio button group (one option can be selected)
+          - "single_choice" = generic single choice when you cannot clearly tell if it's dropdown or radio
           - "date_picker" = calendar widget (look for .datepicker, role="datepicker")
           - "boolean_toggle" = toggle switch (look for .toggle, .switch classes)
           - "consent_checkbox" = terms/conditions checkbox
@@ -107,7 +109,7 @@ export class AIService {
               {
                 "selector": "USE uniqueSelector from field structure above",
                 "fieldName": "Human-readable field name (use labelText if available)",
-                "behavior": "text_entry|masked_input|search_and_select|single_choice|date_picker|boolean_toggle|consent_checkbox|otp_group|range_slider|file_upload",
+                "behavior": "text_entry|masked_input|search_and_select|single_choice_dropdown|single_choice_radio|single_choice|date_picker|boolean_toggle|consent_checkbox|otp_group|range_slider|file_upload",
                 "intent": "semantic_name (e.g. citizenship_country, passport_number)",
                 "expectedValue": "value from client data OR '__MISSING__'",
                 "confidence": "high|medium|low",
@@ -200,7 +202,7 @@ export class AIService {
       );
 
       // Prepare request parts
-      const parts: any[] = [{ text: prompt }];
+      const parts: unknown[] = [{ text: prompt }];
       if (screenshotBase64) {
         parts.push({
           inlineData: {
@@ -228,7 +230,11 @@ export class AIService {
     }
   }
 
-  private logResponse(response: string, usage?: any, imageAttached?: boolean) {
+  private logResponse(
+    response: string,
+    usage?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number },
+    imageAttached?: boolean
+  ) {
     const timestamp = new Date().toISOString();
     
     let usageStr = '';

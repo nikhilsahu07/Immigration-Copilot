@@ -1,4 +1,5 @@
 
+
 import { BaseFiller, AutomatedField, FillResult, FillStrategy, UILibrary, VerificationResult } from './base-filler';
 
 export class SelectFiller extends BaseFiller {
@@ -122,14 +123,15 @@ export class SelectFiller extends BaseFiller {
           await this.page.click(`[role="option"]:has-text("${value}")`);
           break;
           
-        case UILibrary.BOOTSTRAP:
+        case UILibrary.BOOTSTRAP: {
           // Bootstrap-select: click trigger, find option in menu
           await this.page.click(`${field.selector} + .dropdown-toggle`);
           await this.page.waitForSelector('.dropdown-menu', { state: 'visible', timeout: 2000 });
           await this.page.click(`.dropdown-menu >> text="${value}"`);
           break;
+        }
           
-        case UILibrary.SELECT2:
+        case UILibrary.SELECT2: {
           // Select2: use jQuery API if available
           const select2Success = await this.page.evaluate(({ sel, val }) => {
             try {
@@ -153,8 +155,9 @@ export class SelectFiller extends BaseFiller {
             };
           }
           break;
+        }
           
-        case UILibrary.TOM_SELECT:
+        case UILibrary.TOM_SELECT: {
           // Tom Select: use instance API
           const tomSuccess = await this.page.evaluate(({ sel, val }) => {
             try {
@@ -178,6 +181,7 @@ export class SelectFiller extends BaseFiller {
             };
           }
           break;
+        }
           
         default:
           // No specific handler for this library

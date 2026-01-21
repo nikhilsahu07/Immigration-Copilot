@@ -20,7 +20,7 @@ export class MaskedTextFiller extends TextFiller {
     
     // Try without formatting (remove spaces, dashes, parentheses)
     try {
-      const unformatted = value.replace(/[\s\-\(\)]/g, '');
+      const unformatted = value.replace(/[\s\-()]/g, '');
       const fieldCopy = { ...field, value: unformatted };
       result = await super.tryNativeFill(fieldCopy);
       if (result.success) return result;
@@ -38,7 +38,7 @@ export class MaskedTextFiller extends TextFiller {
     try {
       // Try both formatted and unformatted
       const formatted = String(field.value);
-      const unformatted = formatted.replace(/[\s\-\(\)]/g, '');
+      const unformatted = formatted.replace(/[\s\-()]/g, '');
       
       const success = await this.page.evaluate(({ selector, vals }) => {
         const el = document.querySelector(selector);
@@ -55,13 +55,13 @@ export class MaskedTextFiller extends TextFiller {
       
       return {
         success,
-        strategy: 'dom' as any,
+        strategy: FillStrategy.DOM,
         error: success ? undefined : 'Failed to fill masked input',
       };
     } catch (error) {
       return {
         success: false,
-        strategy: 'dom' as any,
+        strategy: FillStrategy.DOM,
         error: String(error),
       };
     }
@@ -76,8 +76,8 @@ export class MaskedTextFiller extends TextFiller {
       const expectedRaw = String(field.value);
       
       // Strip formatting from both
-      const actual = actualRaw.replace(/[\s\-\(\)]/g, '');
-      const expected = expectedRaw.replace(/[\s\-\(\)]/g, '');
+      const actual = actualRaw.replace(/[\s\-()]/g, '');
+      const expected = expectedRaw.replace(/[\s\-()]/g, '');
       
       const passed = actual.toLowerCase() === expected.toLowerCase();
       

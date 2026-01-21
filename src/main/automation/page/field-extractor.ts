@@ -1,3 +1,4 @@
+
 import { Page } from 'playwright-core';
 import { HtmlField } from '../../../shared/types/automation.types';
 import { logger, automationPageLogger } from '../../core/logger';
@@ -43,7 +44,7 @@ export class FieldExtractor {
 
       // 1) Browser-side: extract RAW candidates (no `this`, no Node funcs)
       const raw = await this.page.evaluate((opts) => {
-        // Phase 2: Safety check - ensure document.body exists (page is loaded)
+        // Safety check - ensure document.body exists (page is loaded)
         // This prevents errors during navigation when DOM isn't ready
         if (!document.body) {
           console.warn('[FieldExtractor] document.body is null - page not ready for extraction');

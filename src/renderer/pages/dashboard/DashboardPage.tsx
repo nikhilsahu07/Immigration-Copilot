@@ -83,7 +83,7 @@ export function DashboardPage() {
       if (activityResult.success && activityResult.data) {
         setActivities(activityResult.data);
       }
-    } catch (err) {
+    } catch {
       setError('Failed to load dashboard data');
     } finally {
       setIsLoading(false);

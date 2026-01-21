@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, FileText, Loader2, CheckCircle, XCircle, Edit, AlertCircle, Eye, Trash2, Plus } from 'lucide-react';
@@ -69,7 +70,7 @@ export function ExtractionPage() {
           setExtraction(listResult.data[0]);
         }
       }
-    } catch (err) {
+    } catch {
       setError('Failed to load data');
     } finally {
       setIsLoading(false);
@@ -101,7 +102,7 @@ export function ExtractionPage() {
       } else {
         setError(result.error || 'Failed to start extraction');
       }
-    } catch (err) {
+    } catch {
       setError('An unexpected error occurred');
     } finally {
       setIsExtracting(false);
@@ -119,7 +120,7 @@ export function ExtractionPage() {
       } else {
         setError(result.error || 'Failed to approve extraction');
       }
-    } catch (err) {
+    } catch {
       setError('An unexpected error occurred');
     } finally {
       setIsApproving(false);
@@ -142,7 +143,7 @@ export function ExtractionPage() {
       } else {
         setError(result.error || 'Failed to reject extraction');
       }
-    } catch (err) {
+    } catch {
       setError('An unexpected error occurred');
     } finally {
       setIsRejecting(false);
@@ -197,7 +198,7 @@ export function ExtractionPage() {
       } else {
         setError(result.error || 'Failed to save changes');
       }
-    } catch (err) {
+    } catch {
       setError('Failed to save changes');
     }
   };
@@ -215,7 +216,7 @@ export function ExtractionPage() {
       } else {
         setError(result.error || 'Failed to delete extraction');
       }
-    } catch (err) {
+    } catch {
       setError('Failed to delete extraction');
     } finally {
       setIsDeleting(false);
@@ -250,7 +251,7 @@ export function ExtractionPage() {
       if (!isNaN(dateObj.getTime()) && dateValue && !dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
          try {
            dateValue = dateObj.toISOString().split('T')[0];
-         } catch (e) {
+         } catch {
            // If conversion fails, keep original
          }
       }

@@ -1,12 +1,15 @@
+
 import { 
   AutomationJob, 
+  AutomationCheckpoint,
   CreateJobInput, 
   FormMapping,
   AutomationState,
   Client,
   Extraction,
   PauseReason,
-  BehaviorField
+  BehaviorField,
+  WorkflowStep
 } from '../../shared/types';
 import { 
   automationJobRepository, 
@@ -16,7 +19,7 @@ import {
   documentRepository,
   chatRepository
 } from '../database/repositories';
-import { logger, rawHtmlContextLogger, automationBatchLogger, fieldFillLogger } from '../core/logger';
+import { logger, rawHtmlContextLogger, automationBatchLogger, fieldFillLogger, automationLoopLogger, automationCheckpointLogger } from '../core/logger';
 import { createError } from '../core/error-handler';
 import { ERROR_CODES } from '../../shared/constants';
 
@@ -32,6 +35,12 @@ import { ModeManager } from '../automation/core/mode-manager';
 import { ErrorParser } from '../automation/errors/error-parser';
 import { BehaviorFillerFactory } from '../automation/fillers/behavior-filler-factory';
 import { ConcurrencyPool } from '../automation/utils/concurrency-pool';
+
+type PageIterationResult =
+  | { kind: 'retry'; delayMs: number }
+  | { kind: 'page_done' }
+  | { kind: 'job_completed' }
+  | { kind: 'job_failed'; reason?: string };
 
 export class AutomationService {
   private currentJob: AutomationJob | null = null;
@@ -97,9 +106,12 @@ export class AutomationService {
       EventEmitter.emitStatus('Connecting to browser...', 10);
       await browserConnector.connect();
       // Small delay to ensure Playwright sees the target
-      // Small delay to ensure Playwright sees the target
       await new Promise(r => setTimeout(r, 100));
-      this.processPage(client, extraction, portal.url, input.customPrompt);
+
+      // Mark job as running and start the main job loop (fire-and-forget).
+      await automationJobRepository.updateStatus(job._id, 'running');
+      automationLoopLogger.info(`Starting automation job loop for job ${job._id}`);
+      void this.runJobLoop(job._id);
     } catch (e) {
       logger.error('Failed to connect to browser', e);
       this.stop();
@@ -109,41 +121,149 @@ export class AutomationService {
     return job;
   }
 
-  // Main processing loop - routes to appropriate handler based on page type
-  private async processPage(
-    client: Client, 
-    extraction: Extraction, 
+  /**
+   * Main job loop: single authoritative coordinator for page processing.
+   * This replaces recursive processPage() calls and setTimeout recursion.
+   */
+  private async runJobLoop(jobId: string): Promise<void> {
+    this.isRunning = true;
+    automationLoopLogger.info(`runJobLoop started for job ${jobId}`);
+
+    try {
+      while (this.isRunning) {
+        if (this.isPaused) {
+          automationLoopLogger.info(`runJobLoop exiting for job ${jobId} because isPaused=true`);
+          return;
+        }
+
+        const job = await automationJobRepository.findById(jobId);
+        if (!job) {
+          automationLoopLogger.warn(`Job ${jobId} not found. Exiting loop.`);
+          break;
+        }
+
+        this.currentJob = job;
+
+        if (job.status === 'completed' || job.status === 'failed') {
+          automationLoopLogger.info(`Job ${jobId} has terminal status=${job.status}. Exiting loop.`);
+          break;
+        }
+
+        // Ensure DB status is running
+        if (job.status !== 'running') {
+          await automationJobRepository.updateStatus(jobId, 'running');
+        }
+
+        // Load current resources on each iteration to keep them fresh
+        const [client, portal, extraction] = await Promise.all([
+          clientRepository.findById(job.clientId, job.companyId),
+          portalRepository.findById(job.portalId, job.companyId),
+          extractionRepository.findById(job.extractionId, job.companyId),
+        ]);
+
+        if (!client || !portal || !extraction) {
+          automationLoopLogger.error(`Missing resources for job ${jobId}. client=${!!client}, portal=${!!portal}, extraction=${!!extraction}`);
+          await automationJobRepository.setError(jobId, 'Missing client/portal/extraction resources');
+          this.isRunning = false;
+          break;
+        }
+
+        const portalUrl = job.currentUrl || portal.url;
+        const customPrompt = job.customPrompt;
+        const checkpoint: AutomationCheckpoint | null = job.checkpoint ?? null;
+
+        let result: PageIterationResult;
+
+        if (checkpoint) {
+          automationLoopLogger.info(`Job ${jobId} resuming from checkpoint step=${checkpoint.step}`);
+          result = await this.resumeFromCheckpoint(job, client, extraction, portalUrl, customPrompt, checkpoint);
+        } else {
+          result = await this.executeWorkflowForCurrentPage(job, client, extraction, portalUrl, customPrompt);
+        }
+
+        if (!this.isRunning) {
+          automationLoopLogger.info(`runJobLoop stopped for job ${jobId} because isRunning=false`);
+          break;
+        }
+        if (this.isPaused) {
+          automationLoopLogger.info(`runJobLoop exiting for job ${jobId} because isPaused=true after iteration`);
+          return;
+        }
+
+        if (result.kind === 'retry') {
+          automationLoopLogger.info(`Job ${jobId} retrying current page after delayMs=${result.delayMs}`);
+          await new Promise(r => setTimeout(r, result.delayMs));
+          continue;
+        }
+
+        if (result.kind === 'page_done') {
+          automationLoopLogger.info(`Job ${jobId} completed one page iteration. Continuing loop.`);
+          continue;
+        }
+
+        if (result.kind === 'job_completed') {
+          automationLoopLogger.info(`Job ${jobId} marked completed by workflow.`);
+          await automationJobRepository.updateStatus(jobId, 'completed');
+          this.isRunning = false;
+          break;
+        }
+
+        if (result.kind === 'job_failed') {
+          automationLoopLogger.warn(`Job ${jobId} marked failed by workflow. Reason=${result.reason || 'unknown'}`);
+          await automationJobRepository.setError(jobId, result.reason || 'Automation failed');
+          this.isRunning = false;
+          break;
+        }
+      }
+    } catch (error) {
+      automationLoopLogger.error(`runJobLoop encountered error for job ${jobId}: ${(error as Error).message}`, {
+        stack: (error as Error).stack,
+      });
+      await automationJobRepository.setError(jobId, (error as Error).message);
+      this.isRunning = false;
+    } finally {
+      automationLoopLogger.info(`runJobLoop finished for job ${jobId}`);
+    }
+  }
+
+  /**
+   * Single-page workflow. This is the non-recursive replacement for processPage().
+   * It returns a PageIterationResult consumed by runJobLoop.
+   */
+  private async executeWorkflowForCurrentPage(
+    job: AutomationJob,
+    client: Client,
+    extraction: Extraction,
     portalUrl: string,
     customPrompt?: string
-  ) {
-    if (!this.isRunning || this.isPaused) return;
+  ): Promise<PageIterationResult> {
+    if (!this.isRunning || this.isPaused) {
+      return { kind: 'page_done' };
+    }
 
     try {
       EventEmitter.emitStatus('Downloading page structure...', 15);
-      EventEmitter.emitPageChanged(this.currentJob?.currentPage || 1, this.currentJob?.totalPages || 10);
-      
+      EventEmitter.emitPageChanged(job.currentPage || 1, job.totalPages || 10);
+
       // Get the page from Playwright
       const portalDomain = new URL(portalUrl || 'http://localhost').hostname;
       let page;
       try {
         page = await browserConnector.getPageByUrl(portalDomain);
-      } catch (_e) {
+      } catch {
         logger.warn(`Could not find page for ${portalDomain}, waiting for page load...`);
         EventEmitter.emitStatus('Waiting for page load...', 15);
-        setTimeout(() => this.processPage(client, extraction, portalUrl, customPrompt), 100);
-        return;
+        return { kind: 'retry', delayMs: 100 };
       }
-      
+
       const pageManager = new PageManager(page);
-      
+
       // Update job with current URL for resume support
       const currentUrl = page.url();
       if (this.currentJob) {
-        // Update local state
         this.currentJob.currentUrl = currentUrl;
-        // Fire and forget update
         automationJobRepository.updateCurrentUrl(this.currentJob._id, currentUrl).catch(e => {
-            logger.warn('Failed to update currentUrl', e);
+          logger.warn('Failed to update currentUrl', e);
         });
       }
 
@@ -152,9 +272,13 @@ export class AutomationService {
       const htmlFields = await pageManager.extractFields();
       EventEmitter.emitStatus('Form structure extracted', 20);
 
+      await this.saveCheckpoint('fields_extracted', {
+        currentUrl,
+        htmlFields,
+      });
+
       // 2. (Removed) Do NOT send raw/cleaned HTML context to Gemini, even when screenshots are enabled.
-      if (this.currentJob?.attachScreenshots) {
-        // If you still want raw HTML for debugging, we log it locally only (not sent to Gemini).
+      if (job.attachScreenshots) {
         try {
           const cleaned = await pageManager.extractHtml();
           rawHtmlContextLogger.info(
@@ -171,13 +295,18 @@ export class AutomationService {
 
       // 3. Capture Screenshot (if enabled)
       let screenshotBase64: string | undefined;
-      if (this.currentJob?.attachScreenshots) {
+      if (job.attachScreenshots) {
         EventEmitter.emitStatus('Capturing screenshot...', 25);
         screenshotBase64 = await pageManager.captureScreenshot();
+        await this.saveCheckpoint('screenshot_captured', {
+          currentUrl,
+          htmlFields,
+          screenshotBase64,
+        });
       }
 
       // 4. Fetch documents for context (include s3Key for file uploads)
-      const documents = await documentRepository.findByClient(client._id, this.currentJob?.companyId || '');
+      const documents = await documentRepository.findByClient(client._id, job.companyId || '');
       const documentList = documents.map(d => ({ 
         name: d.originalName, 
         category: d.documentType,
@@ -190,7 +319,7 @@ export class AutomationService {
       // 5. AI Analysis with structured fields
       EventEmitter.emitStatus('Processing with AI...', 30);
       const aiResult = await aiService.analyzePageAndMapFields(
-        htmlFields,  // Changed: structured fields instead of raw HTML
+        htmlFields,  // structured fields instead of raw HTML
         extraction.extractedData,
         documentList,
         customPrompt,
@@ -198,42 +327,156 @@ export class AutomationService {
       );
       EventEmitter.emitStatus(`Got AI response: ${aiResult.pageType} page`, 50);
 
+      await this.saveCheckpoint('ai_analysis_done', {
+        currentUrl,
+        htmlFields,
+        screenshotBase64,
+        aiResult,
+      });
+
       logger.info(`Page classified as: ${aiResult.pageType} - ${aiResult.pageSummary}`);
 
-      // 4. Route based on page type
+      // Route based on page type
       if (aiResult.pageType === 'dashboard' || !aiResult.isFormPage) {
-        await this.processDashboardPage(pageManager, aiResult, client, extraction, portalUrl, customPrompt);
+        const ok = await this.processDashboardPage(pageManager, aiResult, client, extraction, portalUrl, customPrompt);
+        if (!ok) {
+          logger.warn('Dashboard navigation failed – stopping job for manual intervention.');
+          return { kind: 'job_failed', reason: 'Dashboard navigation failed' };
+        }
       } else {
         await this.processFormPage(pageManager, aiResult, client, extraction, portalUrl, customPrompt, documentLookup);
       }
 
+      return { kind: 'page_done' };
     } catch (error: any) {
       logger.error('Page processing failed:', error);
-      
-      // Parse and emit user-friendly error
+
       const errorMessage = ErrorParser.parseGeminiError(error);
       EventEmitter.emitError(errorMessage);
       EventEmitter.emitStatus('Error: ' + errorMessage.title, 0);
+
+      return { kind: 'job_failed', reason: errorMessage.message || errorMessage.title };
     }
+  }
+
+  /**
+   * Resume the current page processing from a previously saved checkpoint.
+   * For now we implement the most valuable resume point: ai_analysis_done.
+   */
+  private async resumeFromCheckpoint(
+    job: AutomationJob,
+    client: Client,
+    extraction: Extraction,
+    portalUrl: string,
+    customPrompt: string | undefined,
+    checkpoint: AutomationCheckpoint
+  ): Promise<PageIterationResult> {
+    automationCheckpointLogger.info(
+      `Resuming job ${job._id} from checkpoint step=${checkpoint.step} at URL=${checkpoint.currentUrl}`
+    );
+
+    // Reconnect to current page
+    const portalDomain = new URL(checkpoint.currentUrl || portalUrl || 'http://localhost').hostname;
+    let page;
+    try {
+      page = await browserConnector.getPageByUrl(portalDomain);
+    } catch {
+      logger.warn(`Checkpoint resume: could not find page for ${portalDomain}, will retry.`);
+      EventEmitter.emitStatus('Waiting for page load (checkpoint resume)...', 15);
+      return { kind: 'retry', delayMs: 100 };
+    }
+
+    const pageManager = new PageManager(page);
+    const currentPageUrl = page.url();
+
+    // CRITICAL: If the actual page URL differs from checkpoint URL, the page has changed.
+    // Clear checkpoint and process the new page fresh.
+    if (checkpoint.currentUrl && currentPageUrl !== checkpoint.currentUrl) {
+      automationCheckpointLogger.warn(
+        `URL mismatch detected for job ${job._id}. Checkpoint URL: ${checkpoint.currentUrl}, Actual URL: ${currentPageUrl}. Clearing checkpoint to process new page.`
+      );
+      if (job._id) {
+        await automationJobRepository.updateCurrentUrl(job._id, currentPageUrl);
+        await automationJobRepository.clearCheckpoint(job._id);
+      }
+      // Fall back to fresh workflow for the new page
+      return this.executeWorkflowForCurrentPage(job, client, extraction, portalUrl, customPrompt);
+    }
+
+    // For now, only special-case ai_analysis_done. Other steps fall back to full workflow.
+    if (checkpoint.step === 'ai_analysis_done' && checkpoint.aiResult) {
+      automationCheckpointLogger.info(
+        `Using cached AI result for job ${job._id} to avoid re-calling Gemini.`
+      );
+
+      // Fetch documents for context (for file uploads) as in fresh run
+      const documents = await documentRepository.findByClient(client._id, job.companyId || '');
+      const documentLookup = new Map(documents.map(d => [d.originalName, d.s3Key]));
+
+      const aiResult = checkpoint.aiResult;
+
+      if (aiResult.pageType === 'dashboard' || !aiResult.isFormPage) {
+        const ok = await this.processDashboardPage(pageManager, aiResult, client, extraction, portalUrl, customPrompt);
+        if (!ok) {
+          logger.warn('Dashboard navigation failed during checkpoint resume – stopping job for manual intervention.');
+          return { kind: 'job_failed', reason: 'Dashboard navigation failed (resume)' };
+        }
+      } else {
+        await this.processFormPage(pageManager, aiResult, client, extraction, portalUrl, customPrompt, documentLookup);
+      }
+
+      return { kind: 'page_done' };
+    }
+
+    automationCheckpointLogger.warn(
+      `Checkpoint step=${checkpoint.step} not specifically handled, falling back to full workflow for job ${job._id}`
+    );
+
+    // Fall back to full workflow (this will also overwrite checkpoint with newer data).
+    return this.executeWorkflowForCurrentPage(job, client, extraction, portalUrl, customPrompt);
+  }
+
+  /**
+   * Persist a checkpoint snapshot for the current job (if any).
+   */
+  private async saveCheckpoint(step: WorkflowStep, data: Partial<AutomationCheckpoint>): Promise<void> {
+    if (!this.currentJob?._id) return;
+
+    const checkpoint: AutomationCheckpoint = {
+      step,
+      currentUrl: data.currentUrl || this.currentJob.currentUrl || '',
+      htmlFields: data.htmlFields,
+      screenshotBase64: data.screenshotBase64,
+      aiResult: data.aiResult,
+      fillResults: data.fillResults,
+      currentMapping: data.currentMapping,
+      timestamp: new Date(),
+    };
+
+    await automationJobRepository.saveCheckpoint(this.currentJob._id, checkpoint);
+    automationCheckpointLogger.info(
+      `Checkpoint saved for job ${this.currentJob._id} at step=${step} url=${checkpoint.currentUrl}`
+    );
   }
 
 
   // Handle dashboard/navigation pages - execute click actions
+  // Returns true if a navigation action was successfully executed, false otherwise.
   private async processDashboardPage(
     pageManager: PageManager,
     aiResult: any,
-    client: Client,
-    extraction: Extraction,
-    portalUrl: string,
-    customPrompt?: string
-  ) {
+    _client: Client,
+    _extraction: Extraction,
+    _portalUrl: string,
+    _customPrompt?: string
+  ): Promise<boolean> {
     EventEmitter.emitStatus('Dashboard detected - executing navigation...', 60);
 
     const actions = aiResult.actions || [];
     if (actions.length === 0) {
       logger.warn('No actions found for dashboard page');
       EventEmitter.emitStatus('No navigation actions found', 50);
-      return;
+      return false;
     }
 
     // SAFETY: Only take the first action (primary action)
@@ -264,7 +507,7 @@ export class AutomationService {
     if (success) {
       EventEmitter.emitStatus('Navigation executed, waiting for new page...', 80);
 
-      // Phase 2: Proper navigation wait - CRITICAL for dashboard actions
+      // Proper navigation wait - CRITICAL for dashboard actions
       // Rule: Wait for page to be fully loaded before starting field extraction
       try {
         logger.info('Waiting for page navigation and load to complete...');
@@ -276,18 +519,27 @@ export class AutomationService {
         // Additional small delay to ensure DOM is fully rendered
         await new Promise(r => setTimeout(r, 500));
         
-        logger.info('Page loaded successfully, proceeding to next page processing');
+        // Get the new URL after navigation
+        const newUrl = page.url();
+        logger.info(`Page loaded successfully. New URL: ${newUrl}`);
+        
+        // CRITICAL: Update job URL and clear checkpoint so next iteration processes the NEW page
+        if (this.currentJob?._id) {
+          await automationJobRepository.updateCurrentUrl(this.currentJob._id, newUrl);
+          await automationJobRepository.clearCheckpoint(this.currentJob._id);
+          automationLoopLogger.info(`Dashboard navigation complete. Cleared checkpoint for job ${this.currentJob._id}. New URL: ${newUrl}`);
+        }
       } catch (err) {
         logger.warn('Navigation wait timeout (page might not have navigated)', err);
         // Still proceed - might be SPA without full reload
       }
 
-      if (this.isRunning && !this.isPaused) {
-        this.processPage(client, extraction, portalUrl, customPrompt);
-      }
+      // No recursive call here; the main runJobLoop will pick up the next page.
+      return true;
     } else {
       EventEmitter.emitStatus('Navigation action failed', 50);
       logger.error('Failed to execute dashboard actions');
+      return false;
     }
   }
 
@@ -299,7 +551,7 @@ export class AutomationService {
     _extraction: Extraction,
     _portalUrl: string,
     _customPrompt?: string,
-    documentLookup?: Map<string, string>
+    _documentLookup?: Map<string, string>
   ) {
     // Ensure fields is an array
     const allFields = Array.isArray(aiResult.fields) ? aiResult.fields : [];
@@ -326,7 +578,7 @@ export class AutomationService {
 
     logger.info(`Processing form with ${fields.length} fields (excluded ${allFields.length - fields.length} filter/search fields)`);
 
-    // Phase 2: Confidence-based filtering and parallel field filling
+    // Confidence-based filtering and parallel field filling
     const behaviorFields = fields as BehaviorField[];
     const highConfidence = behaviorFields.filter(f => f.confidence === 'high');
     const mediumConfidence = behaviorFields.filter(f => f.confidence === 'medium');
@@ -341,7 +593,7 @@ export class AutomationService {
       missing: missingData.length
     });
 
-    // Phase 2: Determine eligible fields for parallel filling
+    // Determine eligible fields for parallel filling
     // - Always include high confidence fields with values
     // - Include medium confidence in auto mode only
     // - Exclude low confidence and missing data
@@ -365,7 +617,7 @@ export class AutomationService {
       mode: isAutoMode ? 'auto' : 'manual'
     });
 
-    // Phase 2: Parallel fill eligible fields with concurrency cap of 10
+    // Parallel fill eligible fields with concurrency cap of 10
     if (eligibleFields.length > 0) {
       EventEmitter.emitStatus(`Filling ${eligibleFields.length} field(s) in parallel...`, 60);
       const batchStartTime = Date.now();
@@ -459,7 +711,7 @@ export class AutomationService {
         avgTimePerField: Math.round(batchDuration / eligibleFields.length),
       });
 
-      // Phase 2: Required field error handling
+      // Required field error handling
       const requiredFieldFailures = results.filter(
         r => r.result?.required && (!r.success || !r.result?.success)
       );
@@ -622,28 +874,24 @@ export class AutomationService {
       try {
         await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
         
-        // Phase 2: Additional small delay to ensure DOM is fully rendered
+        // Additional small delay to ensure DOM is fully rendered
         await new Promise(r => setTimeout(r, 500));
         
-        logger.info('Form submission navigation completed, proceeding to next page');
-      } catch (_e) {
+        // Get the new URL after form submission navigation
+        const newUrl = page.url();
+        logger.info(`Form submission navigation completed. New URL: ${newUrl}`);
+        
+        // CRITICAL: Update job URL and clear checkpoint so next iteration processes the NEW page
+        if (this.currentJob?._id) {
+          await automationJobRepository.updateCurrentUrl(this.currentJob._id, newUrl);
+          await automationJobRepository.clearCheckpoint(this.currentJob._id);
+          automationLoopLogger.info(`Form submission complete. Cleared checkpoint for job ${this.currentJob._id}. New URL: ${newUrl}`);
+        }
+      } catch {
         logger.warn('Nav timeout, checking if URL changed');
       }
 
-      // Loop to next page
-      if (this.currentJob && this.isRunning && !this.isPaused) {
-        try {
-          const c = await clientRepository.findById(this.currentJob.clientId, this.currentJob.companyId);
-          const e = await extractionRepository.findById(this.currentJob.extractionId, this.currentJob.companyId);
-          const p = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
-
-          if (c && e && p) {
-            this.processPage(c, e, p.url);
-          }
-        } catch (err) {
-          logger.error('Failed to restart loop', err);
-        }
-      }
+      // Loop to next page will be handled by runJobLoop based on updated URL/state.
 
     } catch (error) {
       logger.error('Execution failed:', error);
@@ -683,6 +931,8 @@ export class AutomationService {
       if (updated) this.currentJob = updated;
     }
     this.isPaused = true;
+    // Also stop the loop; resume() will start a new runJobLoop.
+    this.isRunning = false;
     EventEmitter.emitStatus('Paused', 0);
   }
 
@@ -694,25 +944,19 @@ export class AutomationService {
         { status: 'running', pauseReason: undefined }
       );
       if (updated) this.currentJob = updated;
-
-      // Resume loop
-      if (this.isPaused) {
-        this.isPaused = false;
-
-        const c = await clientRepository.findById(this.currentJob.clientId, this.currentJob.companyId);
-        const e = await extractionRepository.findById(this.currentJob.extractionId, this.currentJob.companyId);
-        const p = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
-
-        if (c && e && p) {
-          // Use the last visited URL if available, otherwise portal start URL
-          const resumeUrl = this.currentJob.currentUrl || p.url;
-          logger.info(`Resuming automation at URL: ${resumeUrl}`);
-          this.processPage(c, e, resumeUrl);
-        }
-      }
     }
+
+    if (!this.currentJob) {
+      logger.warn('Resume called but no current job found.');
+      return;
+    }
+
     this.isPaused = false;
+    this.isRunning = true;
     EventEmitter.emitStatus('Resuming...', 0);
+
+    automationLoopLogger.info(`Resuming automation loop for job ${this.currentJob._id}`);
+    void this.runJobLoop(this.currentJob._id);
   }
 
   async resumeAfterCaptcha(): Promise<void> {
@@ -751,19 +995,8 @@ export class AutomationService {
 
       EventEmitter.emitStatus('Action executed, processing next page...', 80);
 
-      // Continue to next page
-      if (this.currentJob) {
-        const c = await clientRepository.findById(this.currentJob.clientId, this.currentJob.companyId);
-        const e = await extractionRepository.findById(this.currentJob.extractionId, this.currentJob.companyId);
-        const p = await portalRepository.findById(this.currentJob.portalId, this.currentJob.companyId);
-
-        if (c && e && p) {
-          // Small delay for page navigation
-          // Continue to next page immediately
-          this.currentMapping = null;
-          this.processPage(c, e, p.url);
-        }
-      }
+      // Continue to next page will be handled by the main runJobLoop.
+      this.currentMapping = null;
     } catch (error) {
       logger.error('Failed to execute action:', error);
       EventEmitter.emitStatus('Action failed', 0);

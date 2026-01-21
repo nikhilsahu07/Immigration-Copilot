@@ -76,7 +76,7 @@ export class CheckboxFiller extends BaseFiller {
     
     try {
       switch (library) {
-        case UILibrary.BOOTSTRAP:
+        case UILibrary.BOOTSTRAP: {
           // Bootstrap custom checkbox: click the label
           const clicked = await this.page.evaluate((selector) => {
             const checkbox = document.querySelector(selector) as HTMLInputElement;
@@ -100,6 +100,7 @@ export class CheckboxFiller extends BaseFiller {
             };
           }
           break;
+        }
           
         case UILibrary.MATERIAL_UI:
           // MUI checkbox: click the checkbox wrapper

@@ -1,4 +1,5 @@
 
+
 import { Page } from 'playwright-core';
 import { logger } from '../../core/logger';
 
@@ -52,18 +53,17 @@ export interface AutomatedField {
     fieldLabel: string;
     fieldType: string;
     selector: string;
-    value: any;
+    value: unknown;
     confidence?: string;
     reasoning?: string;
 }
 
 export abstract class BaseFiller {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(protected page: Page, protected options: any = {}) {}
+  constructor(protected page: Page, protected options: Record<string, unknown> = {}) {}
 
   /**
    * Main fill method - progressive resolution with EARLY EXIT
-   * Phase 2: Exit immediately when a strategy succeeds AND verification passes
+   * Exit immediately when a strategy succeeds AND verification passes
    * Order: NATIVE → DOM → UI_LIBRARY → KEYBOARD (with retry)
    */
   async fill(field: AutomatedField): Promise<boolean> {

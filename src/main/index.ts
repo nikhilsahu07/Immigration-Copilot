@@ -1,4 +1,5 @@
-import { app, BrowserWindow } from 'electron';
+
+import { app, BrowserWindow, dialog } from 'electron';
 import { WindowManager } from './core/window-manager';
 import { BrowserViewManager } from './core/browser-view-manager';
 import { initializeDatabase, closeDatabase } from './database';
@@ -6,9 +7,7 @@ import { registerAllHandlers } from './ipc';
 import { logger } from './core/logger';
 import { loadEnvironment } from './config/environment';
 
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-import icon from '../../resources/icon.png?asset';
+import '../../resources/icon.png?asset';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -68,7 +67,6 @@ async function initialize(): Promise<void> {
   } catch (error: any) {
     logger.error('Failed to initialize app', error);
     // Show error dialog instead of crashing silently
-    const { dialog } = require('electron');
     dialog.showErrorBox(
       'Initialization Error',
       `Failed to start application: ${error.message}\n\nCheck logs at: ${app.getPath('userData')}/logs/`

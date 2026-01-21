@@ -86,7 +86,7 @@ export class OtpFiller extends BaseFiller {
   /**
    * Strategy 3: UI Library-specific (not common for OTP)
    */
-  protected async tryUILibraryFill(field: AutomatedField): Promise<FillResult> {
+  protected async tryUILibraryFill(_field: AutomatedField): Promise<FillResult> {
     return {
       success: false,
       strategy: FillStrategy.UI_LIBRARY,

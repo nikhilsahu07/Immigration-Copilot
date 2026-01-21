@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, User, FileText, CheckCircle, Clock, X, Loader2 } from 'lucide-react';
 import { useClientStore } from '../../stores';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription, Button, Input, Label, Separator } from '../../components/ui';
-import { cn } from '../../lib/utils';
+import { Card, CardHeader, CardTitle, CardContent, CardDescription, Button, Input, Label } from '../../components/ui';
 import { formatDateLocale } from '../../../shared/utils';
 import { COUNTRIES } from '../../../shared/constants';
 

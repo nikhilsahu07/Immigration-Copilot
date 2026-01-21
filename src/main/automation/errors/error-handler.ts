@@ -7,6 +7,7 @@ export class AutomationErrorHandler {
   /**
    * Handle an automation error
    */
+  // 
   static handle(error: any, context: string): void {
     logger.error(`Automation error in ${context}:`, error);
     // Additional error handling logic can be added here
@@ -15,6 +16,7 @@ export class AutomationErrorHandler {
   /**
    * Determine if an error is recoverable
    */
+  // 
   static isRecoverable(error: any): boolean {
     const errorString = String(error.message || error);
     

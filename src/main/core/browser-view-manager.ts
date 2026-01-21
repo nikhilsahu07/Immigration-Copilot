@@ -1,3 +1,4 @@
+
 import { BrowserView, BrowserWindow } from 'electron';
 import { logger } from './logger';
 
@@ -87,7 +88,6 @@ export class BrowserViewManager {
       return;
     }
 
-    const bounds = this.mainWindow.getBounds();
     const contentBounds = this.mainWindow.getContentBounds();
 
     // Calculate browser view bounds (right side of the window)

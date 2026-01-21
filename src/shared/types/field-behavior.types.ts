@@ -8,7 +8,9 @@ export enum FieldBehavior {
   MULTILINE_TEXT = 'multiline_text',      // Textarea
   
   // Choice Selection
-  SINGLE_CHOICE = 'single_choice',        // Static select/radio
+  SINGLE_CHOICE = 'single_choice',        // Generic single choice (fallback)
+  SINGLE_CHOICE_DROPDOWN = 'single_choice_dropdown',  // Static dropdown/select
+  SINGLE_CHOICE_RADIO = 'single_choice_radio',        // Radio button group
   MULTI_CHOICE = 'multi_choice',          // Multi-select/checkbox group
   SEARCH_AND_SELECT = 'search_and_select', // Autocomplete/searchable dropdown
   

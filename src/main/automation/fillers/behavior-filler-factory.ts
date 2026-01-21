@@ -35,8 +35,15 @@ export class BehaviorFillerFactory {
         return new MaskedTextFiller(page);
         
       // Choice Selection Behaviors
+      case FieldBehavior.SINGLE_CHOICE_DROPDOWN:
+        return new SelectFiller(page);
+
+      case FieldBehavior.SINGLE_CHOICE_RADIO:
+        return new RadioFiller(page);
+
       case FieldBehavior.SINGLE_CHOICE:
-        return new SelectFiller(page);  // Also works for radio groups
+        // Generic single choice: prefer dropdown semantics by default
+        return new SelectFiller(page);
         
       case FieldBehavior.SEARCH_AND_SELECT:
         return new SearchSelectFiller(page);  // Keyboard-first strategy
@@ -95,6 +102,8 @@ export class BehaviorFillerFactory {
       [FieldBehavior.MULTILINE_TEXT]: 'TextFiller',
       [FieldBehavior.MASKED_INPUT]: 'MaskedTextFiller',
       [FieldBehavior.SINGLE_CHOICE]: 'SelectFiller',
+      [FieldBehavior.SINGLE_CHOICE_DROPDOWN]: 'SelectFiller',
+      [FieldBehavior.SINGLE_CHOICE_RADIO]: 'RadioFiller',
       [FieldBehavior.SEARCH_AND_SELECT]: 'SearchSelectFiller',
       [FieldBehavior.MULTI_CHOICE]: 'CheckboxFiller',
       [FieldBehavior.BOOLEAN_CHECKBOX]: 'CheckboxFiller',
