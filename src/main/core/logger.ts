@@ -101,6 +101,10 @@ export const automationFillingLogger = createPlainFileLogger('automation_filling
 export const automationMappingLogger = createPlainFileLogger('automation_mapping.log');
 export const automationPageLogger = createPlainFileLogger('automation_page.log');
 
+// Phase 2: New dedicated loggers for parallel batch and field fill operations
+export const automationBatchLogger = createPlainFileLogger('automation_batch.log');
+export const fieldFillLogger = createPlainFileLogger('field_fill.log');
+
 // Raw HTML context log (cleaned HTML sent as optional context)
 export const rawHtmlContextLogger = createPlainFileLogger('raw_html_context.log');
 

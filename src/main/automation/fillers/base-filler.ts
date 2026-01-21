@@ -62,68 +62,54 @@ export abstract class BaseFiller {
   constructor(protected page: Page, protected options: any = {}) {}
 
   /**
-   * Main fill method - progressive resolution
+   * Main fill method - progressive resolution with EARLY EXIT
+   * Phase 2: Exit immediately when a strategy succeeds AND verification passes
    * Order: NATIVE → DOM → UI_LIBRARY → KEYBOARD (with retry)
    */
   async fill(field: AutomatedField): Promise<boolean> {
     const startTime = Date.now();
     const attempts: FillResult[] = [];
     
-    // 1. Try Native
-    const nativeResult = await this.tryNativeFill(field);
-    nativeResult.duration = Date.now() - startTime;
-    attempts.push(nativeResult);
-    
-    if (nativeResult.success) {
-      const verification = await this.verifyFill(field);
-      if (verification.passed) {
-        this.logSuccess(field, attempts, verification);
-        return true;
-      }
-    }
+    // Define strategy chain for clear logging
+    const strategies: Array<{ name: string; executor: () => Promise<FillResult> }> = [
+      { name: 'NATIVE', executor: () => this.tryNativeFill(field) },
+      { name: 'DOM', executor: () => this.tryDomFill(field) },
+      { name: 'UI_LIBRARY', executor: () => this.tryUILibraryFill(field) },
+      { name: 'KEYBOARD_1', executor: () => this.tryKeyboardFill(field, 0) },
+      { name: 'KEYBOARD_2', executor: () => this.tryKeyboardFill(field, 1) },
+    ];
 
-    // 2. Try DOM Manipulation
-    const domResult = await this.tryDomFill(field);
-    domResult.duration = Date.now() - startTime;
-    attempts.push(domResult);
-    
-    if (domResult.success) {
-      const verification = await this.verifyFill(field);
-      if (verification.passed) {
-        this.logSuccess(field, attempts, verification);
-        return true;
-      }
-    }
-
-    // 3. Try UI Library-Specific
-    const libraryResult = await this.tryUILibraryFill(field);
-    libraryResult.duration = Date.now() - startTime;
-    attempts.push(libraryResult);
-    
-    if (libraryResult.success) {
-      const verification = await this.verifyFill(field);
-      if (verification.passed) {
-        this.logSuccess(field, attempts, verification);
-        return true;
-      }
-    }
-
-    // 4. Try Keyboard (last resort, with retry)
-    for (let retry = 0; retry < 2; retry++) {
-      const keyboardResult = await this.tryKeyboardFill(field, retry);
-      keyboardResult.duration = Date.now() - startTime;
-      attempts.push(keyboardResult);
+    // Try each strategy in order with early exit on success + verification
+    for (const strategy of strategies) {
+      logger.debug(`Trying ${strategy.name} strategy for field: ${field.fieldLabel}`);
       
-      if (keyboardResult.success) {
-        const verification = await this.verifyFill(field);
-        if (verification.passed) {
-          this.logSuccess(field, attempts, verification);
-          return true;
-        }
+      const result = await strategy.executor();
+      result.duration = Date.now() - startTime;
+      attempts.push(result);
+
+      if (!result.success) {
+        // Strategy failed, log and continue to next
+        logger.debug(`${strategy.name} failed for ${field.fieldLabel}: ${result.error || 'unknown error'}`);
+        continue;
+      }
+
+      // Strategy succeeded, now verify
+      logger.debug(`${strategy.name} reported success for ${field.fieldLabel}, verifying...`);
+      const verification = await this.verifyFill(field);
+      result.verificationPassed = verification.passed;
+
+      if (verification.passed) {
+        // SUCCESS + VERIFIED = EARLY EXIT
+        logger.info(`EARLY EXIT: ${strategy.name} succeeded and verified for ${field.fieldLabel}`);
+        this.logSuccess(field, attempts, verification);
+        return true;
+      } else {
+        // Strategy succeeded but verification failed, continue to next strategy
+        logger.debug(`${strategy.name} succeeded but verification failed for ${field.fieldLabel}: ${verification.reason}`);
       }
     }
 
-    // All strategies failed
+    // All strategies exhausted without success
     this.logFailure(field, attempts);
     return false;
   }
@@ -209,13 +195,14 @@ export abstract class BaseFiller {
 
   protected logSuccess(field: AutomatedField, attempts: FillResult[], verification: VerificationResult): void {
     const successAttempt = attempts[attempts.length - 1];
-    logger.info('Fill succeeded', {
+    logger.info('Fill succeeded (early exit)', {
       field: field.fieldLabel,
       selector: field.selector,
-      attempts: attempts.length,
+      totalAttempts: attempts.length,
       successStrategy: successAttempt.strategy,
       uiLibrary: successAttempt.uiLibrary,
-      verification: verification.passed,
+      verificationPassed: verification.passed,
+      attemptSequence: attempts.map(a => `${a.strategy}:${a.success ? 'ok' : 'fail'}${a.verificationPassed !== undefined ? (a.verificationPassed ? ':verified' : ':verify-fail') : ''}`).join(' → '),
     });
   }
 
@@ -224,9 +211,12 @@ export abstract class BaseFiller {
       field: field.fieldLabel,
       selector: field.selector,
       value: field.value,
+      totalAttempts: attempts.length,
       attempts: attempts.map(a => ({
         strategy: a.strategy,
+        success: a.success,
         uiLibrary: a.uiLibrary,
+        verificationPassed: a.verificationPassed,
         error: a.error,
         duration: a.duration,
         domSnapshot: a.domSnapshot,

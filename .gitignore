@@ -44,3 +44,7 @@ coverage/
 resources/htmlstructures/
 resources/temp/
 resources/debug*
+
+# LLM files
+.cursor/*
+.agent/*

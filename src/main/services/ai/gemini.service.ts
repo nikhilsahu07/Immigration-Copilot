@@ -168,40 +168,54 @@ export class GeminiService {
     return prompt;
   }
 
+  /**
+   * Phase 2: Contract-first JSON parsing - NO automatic repair
+   * 
+   * The model MUST return valid JSON. If it doesn't, we fail explicitly
+   * rather than trying to "fix" broken responses.
+   */
   private parseJsonResponse<T>(text: string): T {
-    // Clean up markdown code blocks
+    // Clean up markdown code blocks (only acceptable cleanup)
     let cleaned = text
       .replace(/```json/g, '')
       .replace(/```/g, '')
       .trim();
 
-    // Find the JSON object
-    const firstBrace = cleaned.indexOf('{');
-    const lastBrace = cleaned.lastIndexOf('}');
+    // Check for optional result markers (fallback if schema mode not used)
+    const markerStart = cleaned.indexOf('<RESULT_JSON>');
+    const markerEnd = cleaned.indexOf('</RESULT_JSON>');
+    
+    if (markerStart !== -1 && markerEnd !== -1 && markerEnd > markerStart) {
+      // Extract content between markers
+      cleaned = cleaned.substring(markerStart + '<RESULT_JSON>'.length, markerEnd).trim();
+      logger.debug('Extracted JSON from result markers');
+    } else {
+      // No markers, try to extract JSON object (first { to last })
+      const firstBrace = cleaned.indexOf('{');
+      const lastBrace = cleaned.lastIndexOf('}');
 
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-      cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+      }
     }
 
     try {
-      return JSON.parse(cleaned);
+      const parsed = JSON.parse(cleaned);
+      logger.debug('Successfully parsed Gemini JSON response');
+      return parsed;
     } catch (parseError) {
-      // Try to fix incomplete JSON
-      logger.warn('Attempting to fix incomplete JSON...');
+      // NO REPAIR - fail explicitly with clear error
+      logger.error('Gemini JSON parse failed (contract violation)', {
+        error: parseError instanceof Error ? parseError.message : String(parseError),
+        rawResponsePreview: text.substring(0, 500),
+        cleanedPreview: cleaned.substring(0, 500),
+      });
       
-      const openBraces = (cleaned.match(/{/g) || []).length;
-      const closeBraces = (cleaned.match(/}/g) || []).length;
-      const openBrackets = (cleaned.match(/\[/g) || []).length;
-      const closeBrackets = (cleaned.match(/\]/g) || []).length;
-
-      if (openBrackets > closeBrackets) {
-        cleaned += ']'.repeat(openBrackets - closeBrackets);
-      }
-      if (openBraces > closeBraces) {
-        cleaned += '}'.repeat(openBraces - closeBraces);
-      }
-
-      return JSON.parse(cleaned);
+      throw new Error(
+        `Gemini returned invalid JSON (contract violation). ` +
+        `Parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}. ` +
+        `This indicates the model did not follow the required output format.`
+      );
     }
   }
 }

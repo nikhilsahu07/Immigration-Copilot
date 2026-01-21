@@ -16,7 +16,7 @@ import {
   documentRepository,
   chatRepository
 } from '../database/repositories';
-import { logger, rawHtmlContextLogger } from '../core/logger';
+import { logger, rawHtmlContextLogger, automationBatchLogger, fieldFillLogger } from '../core/logger';
 import { createError } from '../core/error-handler';
 import { ERROR_CODES } from '../../shared/constants';
 
@@ -31,6 +31,7 @@ import { EventEmitter } from '../automation/core/event-emitter';
 import { ModeManager } from '../automation/core/mode-manager';
 import { ErrorParser } from '../automation/errors/error-parser';
 import { BehaviorFillerFactory } from '../automation/fillers/behavior-filler-factory';
+import { ConcurrencyPool } from '../automation/utils/concurrency-pool';
 
 export class AutomationService {
   private currentJob: AutomationJob | null = null;
@@ -263,9 +264,23 @@ export class AutomationService {
     if (success) {
       EventEmitter.emitStatus('Navigation executed, waiting for new page...', 80);
 
-      // Wait for navigation and then process next page
-      // await new Promise(r => setTimeout(r, 2000)); // Removed for speed
-
+      // Phase 2: Proper navigation wait - CRITICAL for dashboard actions
+      // Rule: Wait for page to be fully loaded before starting field extraction
+      try {
+        logger.info('Waiting for page navigation and load to complete...');
+        const page = pageManager.getPage();
+        
+        // Wait for navigation to complete (either domcontentloaded or networkidle)
+        await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+        
+        // Additional small delay to ensure DOM is fully rendered
+        await new Promise(r => setTimeout(r, 500));
+        
+        logger.info('Page loaded successfully, proceeding to next page processing');
+      } catch (err) {
+        logger.warn('Navigation wait timeout (page might not have navigated)', err);
+        // Still proceed - might be SPA without full reload
+      }
 
       if (this.isRunning && !this.isPaused) {
         this.processPage(client, extraction, portalUrl, customPrompt);
@@ -311,8 +326,7 @@ export class AutomationService {
 
     logger.info(`Processing form with ${fields.length} fields (excluded ${allFields.length - fields.length} filter/search fields)`);
 
-
-    // NEW: Confidence-based filtering
+    // Phase 2: Confidence-based filtering and parallel field filling
     const behaviorFields = fields as BehaviorField[];
     const highConfidence = behaviorFields.filter(f => f.confidence === 'high');
     const mediumConfidence = behaviorFields.filter(f => f.confidence === 'medium');
@@ -327,52 +341,150 @@ export class AutomationService {
       missing: missingData.length
     });
 
-    // Fill high confidence fields ONLY
-    EventEmitter.emitStatus('Filling high-confidence fields...', 60);
-    for (const field of highConfidence) {
-      try {
-        // Use BehaviorFillerFactory to get appropriate filler
-        const filler = BehaviorFillerFactory.getFiller(field.behavior, pageManager.getPage());
-        const fillerName = BehaviorFillerFactory.getFillerName(field.behavior);
-        
-        // Map BehaviorField to AutomatedField format
-        const automatedField = {
-          fieldIndex: 0,
-          fieldName: field.fieldName,
-          fieldLabel: field.fieldName,
-          fieldType: field.behavior,
-          selector: field.selector,
-          value: field.expectedValue,  // ← Map expectedValue to value
-          confidence: field.confidence,
-          reasoning: field.reason
-        };
-        
-        logger.info('Filling field with behavior-based filler', {
-          field: field.fieldName,
-          behavior: field.behavior,
-          filler: fillerName,
-          confidence: field.confidence,
-          value: field.expectedValue,  // ← Log the actual value
-          selector: field.selector
-        });
-        
-        const success = await filler.fill(automatedField);
-        
-        if (!success && field.constraints?.required) {
-          logger.error('Required high-confidence field failed to fill', {
-            field: field.fieldName,
-            selector: field.selector
-          });
+    // Phase 2: Determine eligible fields for parallel filling
+    // - Always include high confidence fields with values
+    // - Include medium confidence in auto mode only
+    // - Exclude low confidence and missing data
+    const isAutoMode = this.modeManager.isAutoMode();
+    const eligibleFields = [
+      ...highConfidence.filter(f => f.expectedValue !== '__MISSING__'),
+      ...(isAutoMode ? mediumConfidence.filter(f => f.expectedValue !== '__MISSING__') : [])
+    ];
+
+    automationBatchLogger.info('Starting parallel field fill batch', {
+      url: pageManager.getPage().url(),
+      pageType: 'form',
+      totalFields: fields.length,
+      eligibleForParallel: eligibleFields.length,
+      excluded: {
+        lowConfidence: lowConfidence.length,
+        missingData: missingData.length,
+        mediumInManualMode: !isAutoMode ? mediumConfidence.length : 0
+      },
+      concurrencyCap: 10,
+      mode: isAutoMode ? 'auto' : 'manual'
+    });
+
+    // Phase 2: Parallel fill eligible fields with concurrency cap of 10
+    if (eligibleFields.length > 0) {
+      EventEmitter.emitStatus(`Filling ${eligibleFields.length} field(s) in parallel...`, 60);
+      const batchStartTime = Date.now();
+
+      // Build tasks for concurrency pool
+      const fillTasks = eligibleFields.map((field, index) => ({
+        id: `${field.fieldName}_${index}`,
+        execute: async () => {
+          const fieldStartTime = Date.now();
           
-          EventEmitter.emitError({
-            title: 'Required Field Failed',
-            message: `Could not fill required field: ${field.fieldName}`,
-            type: 'fill_error' as any
+          // Map BehaviorField to AutomatedField format
+          const automatedField = {
+            fieldIndex: index,
+            fieldName: field.fieldName,
+            fieldLabel: field.fieldName,
+            fieldType: field.behavior,
+            selector: field.selector,
+            value: field.expectedValue,
+            confidence: field.confidence,
+            reasoning: field.reason
+          };
+
+          const filler = BehaviorFillerFactory.getFiller(field.behavior, pageManager.getPage());
+          const fillerName = BehaviorFillerFactory.getFillerName(field.behavior);
+
+          fieldFillLogger.info('Starting field fill', {
+            fieldName: field.fieldName,
+            intent: field.intent,
+            behavior: field.behavior,
+            filler: fillerName,
+            selector: field.selector,
+            confidence: field.confidence,
+            required: field.constraints?.required || false,
           });
+
+          try {
+            const success = await filler.fill(automatedField);
+            const duration = Date.now() - fieldStartTime;
+
+            fieldFillLogger.info('Field fill completed', {
+              fieldName: field.fieldName,
+              success,
+              duration,
+              required: field.constraints?.required || false,
+            });
+
+            return {
+              fieldName: field.fieldName,
+              intent: field.intent,
+              behavior: field.behavior,
+              selector: field.selector,
+              confidence: field.confidence,
+              required: field.constraints?.required || false,
+              success,
+              duration,
+            };
+          } catch (error) {
+            const duration = Date.now() - fieldStartTime;
+
+            fieldFillLogger.error('Field fill threw error', {
+              fieldName: field.fieldName,
+              error: error instanceof Error ? error.message : String(error),
+              duration,
+              required: field.constraints?.required || false,
+            });
+
+            return {
+              fieldName: field.fieldName,
+              intent: field.intent,
+              behavior: field.behavior,
+              selector: field.selector,
+              confidence: field.confidence,
+              required: field.constraints?.required || false,
+              success: false,
+              error: error instanceof Error ? error.message : String(error),
+              duration,
+            };
+          }
         }
-      } catch (error) {
-        logger.error(`Error filling field ${field.fieldName}`, error);
+      }));
+
+      // Run with concurrency cap of 10
+      const results = await ConcurrencyPool.runBatched(fillTasks, 10);
+      const batchDuration = Date.now() - batchStartTime;
+
+      automationBatchLogger.info('Parallel batch completed', {
+        totalFields: eligibleFields.length,
+        succeeded: results.filter(r => r.success && r.result?.success).length,
+        failed: results.filter(r => !r.success || !r.result?.success).length,
+        duration: batchDuration,
+        avgTimePerField: Math.round(batchDuration / eligibleFields.length),
+      });
+
+      // Phase 2: Required field error handling
+      const requiredFieldFailures = results.filter(
+        r => r.result?.required && (!r.success || !r.result?.success)
+      );
+
+      if (requiredFieldFailures.length > 0) {
+        automationBatchLogger.error('Required field(s) failed to fill', {
+          count: requiredFieldFailures.length,
+          fields: requiredFieldFailures.map(r => ({
+            fieldName: r.result?.fieldName,
+            selector: r.result?.selector,
+            behavior: r.result?.behavior,
+            error: r.error?.message || r.result?.error || 'unknown error'
+          }))
+        });
+
+        // Emit error for first required field failure
+        const firstFailure = requiredFieldFailures[0];
+        EventEmitter.emitError({
+          title: 'Required Field Failed',
+          message: `Could not fill required field: ${firstFailure.result?.fieldName}`,
+          type: 'fill_error' as any
+        });
       }
+
+      EventEmitter.emitStatus('Parallel fill completed', 70);
     }
 
     // Handle medium confidence - require review in manual mode
@@ -509,13 +621,16 @@ export class AutomationService {
 
       try {
         await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+        
+        // Phase 2: Additional small delay to ensure DOM is fully rendered
+        await new Promise(r => setTimeout(r, 500));
+        
+        logger.info('Form submission navigation completed, proceeding to next page');
       } catch (_e) {
         logger.warn('Nav timeout, checking if URL changed');
       }
 
       // Loop to next page
-
-      // Loop to next page - removed delay
       if (this.currentJob && this.isRunning && !this.isPaused) {
         try {
           const c = await clientRepository.findById(this.currentJob.clientId, this.currentJob.companyId);
