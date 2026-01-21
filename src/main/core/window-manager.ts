@@ -26,8 +26,8 @@ export class WindowManager {
       callback({
         responseHeaders: {
           ...details.responseHeaders,
-          // Permissive CSP to allow webpack bundles and scripts
-          'Content-Security-Policy': ["default-src * 'unsafe-inline' 'unsafe-eval' data: blob: ws: wss: file:;"]
+          // Permissive CSP to allow webpack bundles, scripts, and fonts
+          'Content-Security-Policy': ["default-src * 'unsafe-inline' 'unsafe-eval' data: blob: ws: wss: file:; font-src * data: file:;"]
         }
       });
     });

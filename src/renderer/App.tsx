@@ -75,6 +75,60 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
 }
 
 export function App() {
+  const checkSession = useAuthStore((state) => state.checkSession);
+  const session = useAuthStore((state) => state.session);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const [sessionRestored, setSessionRestored] = React.useState(false);
+  
+  // Restore session in main process on app startup - MUST complete before rendering protected routes
+  React.useEffect(() => {
+    let isMounted = true;
+    
+    const restoreSession = async () => {
+      // Small delay to ensure Zustand persist has hydrated
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Get fresh state after potential hydration
+      const currentSession = useAuthStore.getState().session;
+      const currentIsAuthenticated = useAuthStore.getState().isAuthenticated;
+      
+      // If we have a persisted session, restore it in main process
+      if (currentSession?._id && currentIsAuthenticated) {
+        try {
+          // Validate and restore session in main process
+          await checkSession();
+        } catch (error) {
+          // Session restoration failed - will be handled by auth flow
+        }
+      }
+      
+      if (isMounted) {
+        setSessionRestored(true);
+      }
+    };
+    
+    restoreSession();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Run once on mount
+  
+  // Show loading state while restoring session (only if we think we're authenticated)
+  if (!sessionRestored && isAuthenticated) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        height: '100vh',
+        fontFamily: 'system-ui'
+      }}>
+        <div>Restoring session...</div>
+      </div>
+    );
+  }
+  
   try {
     return (
       <ErrorBoundary>
