@@ -7,8 +7,6 @@ import { registerAllHandlers } from './ipc';
 import { logger } from './core/logger';
 import { loadEnvironment } from './config/environment';
 
-import '../../resources/icon.png?asset';
-
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
