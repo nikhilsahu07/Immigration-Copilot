@@ -1,5 +1,4 @@
-
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { companyRepository, agentRepository, auditLogRepository, sessionRepository } from '../../database/repositories';
 import { RegisterInput, LoginInput, LoginResponse, AuthSession } from '../../../shared/types';
 import { createError } from '../../core/error-handler';

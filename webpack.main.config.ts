@@ -15,8 +15,8 @@ export const mainConfig: Configuration = {
     },
   },
   externals: {
-    'playwright-core': 'commonjs playwright-core',
-    'bcrypt': 'commonjs bcrypt',
+    // playwright-core removed from externals - will be bundled by webpack
+    // Native dependencies will be handled by AutoUnpackNativesPlugin
   },
   // FIX: Enable __dirname and __filename
   node: {

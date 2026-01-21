@@ -19,19 +19,18 @@ export class WindowManager {
 
     const isDev = !app.isPackaged;
 
-    // ✅ Set CSP BEFORE creating window
-    if (isDev) {
-      const ses = session.defaultSession;
-      ses.webRequest.onHeadersReceived((details, callback) => {
-        callback({
-          responseHeaders: {
-            ...details.responseHeaders,
-            // Override ANY CSP with a permissive one for development
-            'Content-Security-Policy': ["default-src * 'unsafe-inline' 'unsafe-eval' data: blob: ws: wss:;"]
-          }
-        });
+    // ✅ Set CSP for both dev and production
+    // In production, we need to allow webpack bundles to load
+    const ses = session.defaultSession;
+    ses.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          // Permissive CSP to allow webpack bundles and scripts
+          'Content-Security-Policy': ["default-src * 'unsafe-inline' 'unsafe-eval' data: blob: ws: wss: file:;"]
+        }
       });
-    }
+    });
 
     this.mainWindow = new BrowserWindow({
       width: 1600,
@@ -51,10 +50,36 @@ export class WindowManager {
       show: false,
     });
 
-    // Load the app
-    this.mainWindow.loadURL(this.webpackEntry);
+    // Add error handlers to debug white screen issues
+    this.mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+      logger.error(`Failed to load: ${validatedURL}`, { errorCode, errorDescription });
+    });
 
-    // ✅ Open DevTools in development
+    this.mainWindow.webContents.on('render-process-gone', (event, details) => {
+      logger.error('Render process gone:', details);
+    });
+
+    this.mainWindow.webContents.on('unresponsive', () => {
+      logger.error('Window became unresponsive');
+    });
+
+    this.mainWindow.webContents.on('crashed', (event, killed) => {
+      logger.error('Renderer process crashed', { killed });
+    });
+
+    // Log console messages from renderer
+    this.mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+      const levelMap = { 0: 'DEBUG', 1: 'INFO', 2: 'WARN', 3: 'ERROR' };
+      logger.info(`[Renderer ${levelMap[level as keyof typeof levelMap] || 'LOG'}] ${message}`);
+    });
+
+    // Load the app
+    logger.info(`Loading renderer from: ${this.webpackEntry}`);
+    this.mainWindow.loadURL(this.webpackEntry).catch((error) => {
+      logger.error('Failed to load URL:', error);
+    });
+
+    // ✅ Open DevTools in development only
     if (isDev) {
       this.mainWindow.webContents.openDevTools();
     }

@@ -61,10 +61,15 @@ export class BrowserViewManager {
   }
 
   hide(): void {
-    if (this.browserView) {
-      this.mainWindow.removeBrowserView(this.browserView);
-      this.isVisible = false;
-      logger.info('BrowserView hidden');
+    if (this.browserView && !this.mainWindow.isDestroyed()) {
+      try {
+        this.mainWindow.removeBrowserView(this.browserView);
+        this.isVisible = false;
+        logger.info('BrowserView hidden');
+      } catch (error) {
+        // Window might be destroyed, ignore the error
+        logger.debug('Could not remove BrowserView (window may be destroyed)');
+      }
     }
   }
 
@@ -116,11 +121,23 @@ export class BrowserViewManager {
 
   destroy(): void {
     if (this.browserView) {
-      this.hide();
+      // Only try to hide if window is not destroyed
+      if (!this.mainWindow.isDestroyed()) {
+        try {
+          this.hide();
+        } catch (error) {
+          // Ignore errors if window is already destroyed
+          logger.debug('Could not hide BrowserView during destroy');
+        }
+      }
       
       // Destroy the web contents
       if (!this.browserView.webContents.isDestroyed()) {
-        this.browserView.webContents.close();
+        try {
+          this.browserView.webContents.close();
+        } catch (error) {
+          logger.debug('Could not close BrowserView webContents');
+        }
       }
       
       this.browserView = null;
