@@ -19,8 +19,20 @@ interface AutomationStoreState {
   error: string | null;
   mode: 'auto' | 'manual';
   
+  // Form state (persisted across navigation)
+  selectedClient: string;
+  selectedPortal: string;
+  customPrompt: string;
+  browserViewShown: boolean;
+  attachScreenshots: boolean;
+  
   // Actions
   setMode: (mode: 'auto' | 'manual') => Promise<void>;
+  setSelectedClient: (clientId: string) => void;
+  setSelectedPortal: (portalId: string) => void;
+  setCustomPrompt: (prompt: string) => void;
+  setBrowserViewShown: (shown: boolean) => void;
+  setAttachScreenshots: (attach: boolean) => void;
   startAutomation: (data: CreateJobInput) => Promise<boolean>;
   stopAutomation: () => Promise<void>;
   pauseAutomation: () => Promise<void>;
@@ -33,6 +45,7 @@ interface AutomationStoreState {
   loadUrl: (url: string) => Promise<void>;
   hidePreview: () => Promise<void>;
   closeBrowser: () => Promise<void>;
+  clearFormState: () => Promise<void>;
   
   // Internal
   setStatus: (message: string, progress: number) => void;
@@ -60,6 +73,12 @@ const initialState = {
   isLoading: false,
   error: null,
   mode: 'manual' as 'auto' | 'manual',
+  // Form state
+  selectedClient: '',
+  selectedPortal: '',
+  customPrompt: '',
+  browserViewShown: false,
+  attachScreenshots: false,
 };
 
 export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
@@ -72,6 +91,29 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
     } catch {
       set({ error: 'Failed to set mode' });
     }
+  },
+
+  setSelectedClient: (clientId) => set({ selectedClient: clientId }),
+  setSelectedPortal: (portalId) => set({ selectedPortal: portalId }),
+  setCustomPrompt: (prompt) => set({ customPrompt: prompt }),
+  setBrowserViewShown: (shown) => set({ browserViewShown: shown }),
+  setAttachScreenshots: (attach) => set({ attachScreenshots: attach }),
+
+  clearFormState: async () => {
+    try {
+      // Hide and close browser view when clearing form
+      await api.browserView.hide();
+      await api.browserView.close();
+    } catch {
+      // Ignore errors
+    }
+    set({ 
+      selectedClient: '',
+      selectedPortal: '',
+      customPrompt: '',
+      browserViewShown: false,
+      attachScreenshots: false,
+    });
   },
 
   startAutomation: async (data) => {

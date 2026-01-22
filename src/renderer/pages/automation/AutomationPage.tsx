@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Play, Pause, Square, AlertTriangle, KeyRound, CheckCircle, Loader2, Globe, MessageSquare, FileText, Bot, Sparkles, ArrowRight, XCircle, Search, PlusCircle } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label, Progress, Textarea } from '../../components/ui';
 import { useAutomationStore, useClientStore, usePortalStore } from '../../stores';
@@ -17,6 +18,11 @@ export function AutomationPage() {
     captchaType,
     otpDetected,
     isLoading,
+    selectedClient,
+    selectedPortal,
+    customPrompt,
+    browserViewShown,
+    attachScreenshots,
     startAutomation,
     stopAutomation,
     pauseAutomation,
@@ -28,22 +34,22 @@ export function AutomationPage() {
     hidePreview,
     mode,
     setMode,
+    setSelectedClient,
+    setSelectedPortal,
+    setCustomPrompt,
+    setBrowserViewShown,
+    setAttachScreenshots,
   } = useAutomationStore();
 
   const { clients, fetchClients, isLoading: clientsLoading } = useClientStore();
   const { portals, fetchPortals, isLoading: portalsLoading } = usePortalStore();
 
-  const [selectedClient, setSelectedClient] = useState('');
-  const [selectedPortal, setSelectedPortal] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [approvedExtraction, setApprovedExtraction] = useState<Extraction | null>(null);
   const [loadingExtraction, setLoadingExtraction] = useState(false);
-  const [customPrompt, setCustomPrompt] = useState('');
-  const [browserViewShown, setBrowserViewShown] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
-  const [attachScreenshots, setAttachScreenshots] = useState(false);
 
   useEffect(() => {
     fetchClients();
@@ -76,6 +82,7 @@ export function AutomationPage() {
   };
 
   // When portal is selected, show BrowserView immediately
+  // When portal is cleared, hide BrowserView
   useEffect(() => {
     if (selectedPortal) {
       const portal = portals.find(p => p._id === selectedPortal);
@@ -84,12 +91,42 @@ export function AutomationPage() {
         setBrowserViewShown(true);
       }
     } else {
+      // Portal cleared - hide browser view
       if (browserViewShown && !isRunning) {
         hidePreview();
         setBrowserViewShown(false);
+        // Also close the browser view completely
+        api.browserView.close().catch(() => {
+          // Ignore errors
+        });
       }
     }
-  }, [selectedPortal]);
+  }, [selectedPortal, portals, browserViewShown, isRunning, loadUrl, hidePreview, setBrowserViewShown]);
+
+  // Restore browser view when returning to page if portal was selected
+  const location = useLocation();
+  useEffect(() => {
+    // Only restore if we're on the automation page and have a selected portal
+    if (location.pathname === '/automation' && selectedPortal && !browserViewShown && !isRunning) {
+      const portal = portals.find(p => p._id === selectedPortal);
+      if (portal) {
+        loadUrl(portal.url);
+        setBrowserViewShown(true);
+      }
+    }
+  }, [location.pathname, selectedPortal, browserViewShown, isRunning, portals, loadUrl, setBrowserViewShown]);
+
+  // Cleanup: Hide browser view when navigating away from automation page
+  useEffect(() => {
+    return () => {
+      // Only hide if not running (don't interrupt automation)
+      if (!isRunning && browserViewShown) {
+        hidePreview().catch(() => {
+          // Ignore errors during cleanup
+        });
+      }
+    };
+  }, [isRunning, browserViewShown, hidePreview]);
 
   const loadApprovedExtraction = async (clientId: string) => {
     setLoadingExtraction(true);
@@ -140,12 +177,9 @@ export function AutomationPage() {
         await stopAutomation(); // Use the store's stopAutomation
       } else {
         // If not running but browser is open (manual mode or finished)
-        await api.browserView.hide();
-        await api.browserView.close();
+        // Clear selected portal which will trigger cleanup and hide browser view
+        setSelectedPortal('');
       }
-      // setIsRunning(false); // This state is managed by the store's stopAutomation
-      setBrowserViewShown(false);
-      // Don't clear selected portal to persist selection
     } catch (err) {
       console.error('Failed to stop automation:', err);
     }
