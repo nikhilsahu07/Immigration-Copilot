@@ -118,6 +118,12 @@ async function createIndexes(db: Db): Promise<void> {
       { key: { expiresAt: 1 }, expireAfterSeconds: 0 }, // TTL index
     ]);
 
+    // Credentials indexes
+    await db.collection('credentials').createIndexes([
+      { key: { companyId: 1 } },
+      { key: { companyId: 1, isActive: 1 } },
+    ]);
+
     logger.info('Database indexes created successfully');
   } catch (error) {
     logger.error('Failed to create indexes:', error);
@@ -137,4 +143,5 @@ export const COLLECTIONS = {
   AUDIT_LOGS: 'audit_logs',
   CHATS: 'chats',
   SESSIONS: 'sessions',
+  CREDENTIALS: 'credentials',
 } as const;

@@ -3,6 +3,7 @@ import { Building, User, Key, Bell } from 'lucide-react';
 import { useAuthStore } from '../../stores';
 import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label } from '../../components/ui';
 import { AgentsList } from './components/AgentsList';
+import { CredentialsList } from './components/CredentialsList';
 
 export function SettingsPage() {
   const { agent, company } = useAuthStore();
@@ -80,6 +81,9 @@ export function SettingsPage() {
 
         {/* Team Management (Admin Only) */}
         {agent?.role === 'admin' && <AgentsList />}
+
+        {/* Gemini API Keys */}
+        <CredentialsList />
 
         {/* Security Settings */}
         <Card>

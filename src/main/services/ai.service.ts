@@ -1,6 +1,6 @@
 
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
-import { getEnv } from '../config/environment';
+import { getAIConfig } from '../config/ai.config';
 import { logger, geminiPromptLogger, geminiResponseLogger, htmlFieldsStructureLogger } from '../core/logger';
 
 import { BehaviorFormMapping } from '../../shared/types';
@@ -9,12 +9,17 @@ import { HtmlField } from '../../shared/types/automation.types';
 export type AIAnalysisResult = BehaviorFormMapping;
 
 export class AIService {
-  private model: GenerativeModel;
-
-  constructor() {
-    const env = getEnv();
-    const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
-    this.model = genAI.getGenerativeModel({ model: env.GEMINI_MODEL });
+  private getModel(apiKey: string, modelName: string): GenerativeModel {
+    const config = getAIConfig(apiKey, modelName);
+    const genAI = new GoogleGenerativeAI(config.apiKey);
+    return genAI.getGenerativeModel({ 
+      model: config.model,
+      generationConfig: {
+        temperature: config.temperature,
+        topP: config.topP,
+        maxOutputTokens: config.maxOutputTokens,
+      },
+    });
   }
 
   async analyzePageAndMapFields(
@@ -22,6 +27,8 @@ export class AIService {
     // 
     extractedData: any,
     documentList: { name: string; category: string }[],
+    apiKey: string,
+    modelName: string,
     customPrompt?: string,
     screenshotBase64?: string,
     htmlContext?: string
@@ -212,7 +219,8 @@ export class AIService {
         });
       }
 
-      const result = await this.model.generateContent(parts);
+      const model = this.getModel(apiKey, modelName);
+      const result = await model.generateContent(parts);
       const response = result.response;
       const usage = response.usageMetadata;
       const text = response.text();

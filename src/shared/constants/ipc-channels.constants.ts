@@ -55,6 +55,14 @@ export const IPC_CHANNELS = {
   CHAT_LIST: 'chat:list',
   CHAT_CREATE: 'chat:create',
 
+  // Credentials
+  CREDENTIAL_LIST: 'credential:list',
+  CREDENTIAL_GET: 'credential:get',
+  CREDENTIAL_CREATE: 'credential:create',
+  CREDENTIAL_UPDATE: 'credential:update',
+  CREDENTIAL_DELETE: 'credential:delete',
+  CREDENTIAL_GET_ACTIVE: 'credential:get-active',
+
   AUTOMATION_START: 'automation:start',
   AUTOMATION_STOP: 'automation:stop',
   AUTOMATION_PAUSE: 'automation:pause',

@@ -3,27 +3,25 @@ import { getAIConfig, EXTRACTION_PROMPT_TEMPLATE, MAPPING_PROMPT_TEMPLATE } from
 import { GeminiExtractionRequest, GeminiMappingRequest, GeminiExtractionResponse, GeminiMappingResponse, GeminiResponse } from '../../../shared/types';
 import { logger, geminiPromptLogger } from '../../core/logger';
 
-let genAI: GoogleGenerativeAI | null = null;
-let model: GenerativeModel | null = null;
-
-function getModel(): GenerativeModel {
-  if (!model) {
-    const config = getAIConfig();
-    genAI = new GoogleGenerativeAI(config.apiKey);
-    model = genAI.getGenerativeModel({
-      model: config.model,
-      generationConfig: {
-        temperature: config.temperature,
-        topP: config.topP,
-        maxOutputTokens: config.maxOutputTokens,
-      },
-    });
-  }
-  return model;
+function getModel(apiKey: string, modelName: string): GenerativeModel {
+  const config = getAIConfig(apiKey, modelName);
+  const genAI = new GoogleGenerativeAI(config.apiKey);
+  return genAI.getGenerativeModel({
+    model: config.model,
+    generationConfig: {
+      temperature: config.temperature,
+      topP: config.topP,
+      maxOutputTokens: config.maxOutputTokens,
+    },
+  });
 }
 
 export class GeminiService {
-  async extractData(request: GeminiExtractionRequest): Promise<GeminiResponse<GeminiExtractionResponse>> {
+  async extractData(
+    request: GeminiExtractionRequest,
+    apiKey: string,
+    modelName: string
+  ): Promise<GeminiResponse<GeminiExtractionResponse>> {
     const startTime = Date.now();
     
     try {
@@ -49,7 +47,8 @@ export class GeminiService {
       }
 
       logger.info('Sending extraction request to Gemini...');
-      const result = await getModel().generateContent(parts);
+      const model = getModel(apiKey, modelName);
+      const result = await model.generateContent(parts);
       const response = await result.response;
       const text = response.text();
 
@@ -78,7 +77,11 @@ export class GeminiService {
     }
   }
 
-  async mapFormFields(request: GeminiMappingRequest): Promise<GeminiResponse<GeminiMappingResponse>> {
+  async mapFormFields(
+    request: GeminiMappingRequest,
+    apiKey: string,
+    modelName: string
+  ): Promise<GeminiResponse<GeminiMappingResponse>> {
     const startTime = Date.now();
     
     try {
@@ -98,7 +101,8 @@ export class GeminiService {
       );
 
       logger.info('Sending mapping request to Gemini...');
-      const result = await getModel().generateContent(prompt);
+      const model = getModel(apiKey, modelName);
+      const result = await model.generateContent(prompt);
       const response = await result.response;
       const text = response.text();
 

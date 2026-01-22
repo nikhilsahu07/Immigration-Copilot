@@ -90,6 +90,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     list: createInvoker(IPC_CHANNELS.CHAT_LIST),
     create: createInvoker(IPC_CHANNELS.CHAT_CREATE),
   },
+
+  // Credentials
+  credential: {
+    list: createInvoker(IPC_CHANNELS.CREDENTIAL_LIST),
+    get: createInvoker(IPC_CHANNELS.CREDENTIAL_GET),
+    create: createInvoker(IPC_CHANNELS.CREDENTIAL_CREATE),
+    update: createInvoker(IPC_CHANNELS.CREDENTIAL_UPDATE),
+    delete: createInvoker(IPC_CHANNELS.CREDENTIAL_DELETE),
+    getActive: createInvoker(IPC_CHANNELS.CREDENTIAL_GET_ACTIVE),
+  },
+
   automation: {
     start: createInvoker(IPC_CHANNELS.AUTOMATION_START),
     stop: createInvoker(IPC_CHANNELS.AUTOMATION_STOP),

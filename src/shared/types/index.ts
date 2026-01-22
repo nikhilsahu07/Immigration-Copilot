@@ -4,6 +4,7 @@ export * from './automation.types';
 export * from './client.types';
 export * from './common.types';
 export * from './company.types';
+export * from './credential.types';
 export * from './document.types';
 export * from './extraction.types';
 export * from './gemini.types';

@@ -1,12 +1,9 @@
-import { getEnv } from './environment';
 import { GeminiConfig } from '../../shared/types';
 
-export function getAIConfig(): GeminiConfig {
-  const env = getEnv();
-
+export function getAIConfig(apiKey: string, model: string): GeminiConfig {
   return {
-    apiKey: env.GEMINI_API_KEY,
-    model: env.GEMINI_MODEL,
+    apiKey,
+    model,
     temperature: 0.3,
     topP: 0.8,
     maxOutputTokens: 8192,

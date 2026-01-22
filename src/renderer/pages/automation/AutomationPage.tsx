@@ -50,6 +50,7 @@ export function AutomationPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [selectedModel, setSelectedModel] = useState('gemini-3-flash-preview');
 
   useEffect(() => {
     fetchClients();
@@ -155,6 +156,7 @@ export function AutomationPage() {
       extractionId: approvedExtraction._id,
       customPrompt: customPrompt || undefined,
       attachScreenshots,
+      modelName: selectedModel,
     });
   };
 
@@ -300,6 +302,24 @@ export function AutomationPage() {
                     ))}
                   </select>
                 )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Gemini Model</Label>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="gemini-3-flash-preview">gemini-3-flash-preview (Default)</option>
+                  <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                  <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp</option>
+                  <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                  <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Select the Gemini model to use for form automation
+                </p>
               </div>
 
               <div className="space-y-2">

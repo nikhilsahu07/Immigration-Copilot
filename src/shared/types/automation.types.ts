@@ -48,6 +48,7 @@ export interface AutomationCheckpoint {
 }
 
 export interface AutomationJob extends BaseEntity, WithCompany, WithAgent {
+  modelName?: string; // Gemini model name used for this job
   clientId: string;
   portalId: string;
   extractionId: string;
@@ -155,6 +156,7 @@ export interface CreateJobInput {
   extractionId: string;
   customPrompt?: string;
   attachScreenshots?: boolean;
+  modelName?: string; // Gemini model name (default: gemini-3-flash-preview)
 }
 
 export interface UpdateJobInput {

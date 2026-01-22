@@ -26,6 +26,9 @@ import type {
   AgentPublic,
   CreateAgentInput,
   UpdateAgentInput,
+  Credential,
+  CreateCredentialInput,
+  UpdateCredentialInput,
 } from '../../shared/types';
 
 export interface DashboardStats {
@@ -110,6 +113,14 @@ export interface ElectronAPI {
   chat: {
     list: (data: { clientId: string }) => Promise<Result<ChatMessage[]>>;
     create: (data: { clientId: string; content: string; role: string; jobId?: string }) => Promise<Result<ChatMessage>>;
+  };
+  credential: {
+    list: () => Promise<Result<Credential[]>>;
+    get: (data: { id: string }) => Promise<Result<Credential>>;
+    create: (data: CreateCredentialInput) => Promise<Result<Credential>>;
+    update: (data: { id: string; data: UpdateCredentialInput }) => Promise<Result<Credential>>;
+    delete: (data: { id: string }) => Promise<Result<void>>;
+    getActive: () => Promise<Result<Credential | null>>;
   };
   automation: {
     start: (data: CreateJobInput) => Promise<Result<AutomationJob>>;

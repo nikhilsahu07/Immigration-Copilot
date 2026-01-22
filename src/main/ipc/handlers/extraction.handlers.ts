@@ -83,12 +83,24 @@ export function registerExtractionHandlers(): void {
         })
       );
 
-      // Call Gemini for extraction
-      const geminiResult = await geminiService.extractData({
-        clientInfo: { name: 'Client' }, // Would be fetched from client record
-        documents: geminiDocs,
-        customPrompt: validated.customPrompt,
-      });
+      // Get active credential
+      const { credentialRepository } = await import('../../database/repositories/credential.repository');
+      const activeCredential = await credentialRepository.findActive(session.companyId);
+      
+      if (!activeCredential) {
+        throw createError(ERROR_CODES.VALIDATION_ERROR, 'No active Gemini API key found. Please set one in Settings.');
+      }
+
+      // Call Gemini for extraction (use default model: gemini-3-flash-preview)
+      const geminiResult = await geminiService.extractData(
+        {
+          clientInfo: { name: 'Client' }, // Would be fetched from client record
+          documents: geminiDocs,
+          customPrompt: validated.customPrompt,
+        },
+        activeCredential.apiKey,
+        'gemini-3-flash-preview' // Default model for extraction
+      );
 
       if (!geminiResult.success || !geminiResult.data) {
         throw createError(ERROR_CODES.EXTRACTION_AI_ERROR, geminiResult.error);

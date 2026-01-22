@@ -22,10 +22,6 @@ const envSchema = z.object({
   AWS_SECRET_ACCESS_KEY: z.string().min(1, 'AWS Secret Access Key is required'),
   S3_BUCKET_NAME: z.string().min(1, 'S3 Bucket Name is required'),
 
-  // Gemini
-  GEMINI_API_KEY: z.string().min(1, 'Gemini API Key is required'),
-  GEMINI_MODEL: z.string().default('gemini-3-flash-preview'),
-
   // App settings
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),

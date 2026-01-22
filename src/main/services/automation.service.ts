@@ -67,9 +67,10 @@ export class AutomationService {
     if (!portal) throw createError(ERROR_CODES.PORTAL_NOT_FOUND, 'Portal not found');
     if (!extraction) throw createError(ERROR_CODES.EXTRACTION_NOT_FOUND);
 
-    // 2. Create Job in DB
+    // 2. Create Job in DB (include modelName)
     const job = await automationJobRepository.create(companyId, agentId, {
       ...input,
+      modelName: input.modelName || 'gemini-3-flash-preview',
     });
 
     // 2.5 Save custom prompt to chat history if present
@@ -339,12 +340,25 @@ export class AutomationService {
       // Create lookup map for resolving document names to S3 keys
       const documentLookup = new Map(documents.map(d => [d.originalName, d.s3Key]));
 
-      // 5. AI Analysis with structured fields
+      // 5. Get active credential and model
+      const { credentialRepository } = await import('../database/repositories/credential.repository');
+      const activeCredential = await credentialRepository.findActive(job.companyId || '');
+      
+      if (!activeCredential) {
+        throw createError(ERROR_CODES.VALIDATION_ERROR, 'No active Gemini API key found. Please set one in Settings.');
+      }
+
+      // Use model from job input, default to gemini-3-flash-preview
+      const modelName = job.modelName || 'gemini-3-flash-preview';
+
+      // 6. AI Analysis with structured fields
       EventEmitter.emitStatus('Processing with AI...', 30);
       const aiResult = await aiService.analyzePageAndMapFields(
         htmlFields,  // structured fields instead of raw HTML
         extraction.extractedData,
         documentList,
+        activeCredential.apiKey,
+        modelName,
         customPrompt,
         screenshotBase64
       );
