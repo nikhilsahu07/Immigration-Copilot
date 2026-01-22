@@ -1,5 +1,5 @@
 import { Page } from 'playwright-core';
-import { logger } from '../../core/logger';
+import { logger, automationNavigationLogger } from '../../core/logger';
 
 /**
  * Click handler with multiple fallback strategies
@@ -40,7 +40,18 @@ export class ClickHandler {
       await target.scrollIntoViewIfNeeded();
       
       logger.info(`Clicking element: ${description || selector}`);
+      
+      const currentUrl = this.page.url();
+      const clickStartTime = Date.now();
       await target.click({ force: false });
+      const clickDuration = Date.now() - clickStartTime;
+      
+      automationNavigationLogger.info('Element clicked via executeClick', {
+        selector,
+        description,
+        currentUrl,
+        clickDuration
+      });
       
       return true;
     } catch (error) {
@@ -70,7 +81,18 @@ export class ClickHandler {
       await target.scrollIntoViewIfNeeded();
       
       logger.info(`Clicking button: "${expectedText}" (${selector})`);
+      
+      const currentUrl = this.page.url();
+      const clickStartTime = Date.now();
       await target.click();
+      const clickDuration = Date.now() - clickStartTime;
+      
+      automationNavigationLogger.info('Button clicked via clickButtonWithText', {
+        selector,
+        expectedText,
+        currentUrl,
+        clickDuration
+      });
       
       return true;
     } catch (error) {
@@ -98,7 +120,18 @@ export class ClickHandler {
       await target.scrollIntoViewIfNeeded();
       
       logger.info(`Clicking ${role} by name: "${name}"`);
+      
+      const currentUrl = this.page.url();
+      const clickStartTime = Date.now();
       await target.click();
+      const clickDuration = Date.now() - clickStartTime;
+      
+      automationNavigationLogger.info('Element clicked via clickByRole', {
+        role,
+        name,
+        currentUrl,
+        clickDuration
+      });
       
       return true;
     } catch (error) {
@@ -126,7 +159,17 @@ export class ClickHandler {
       await target.scrollIntoViewIfNeeded();
       
       logger.info(`Clicking element by text: "${text}"`);
+      
+      const currentUrl = this.page.url();
+      const clickStartTime = Date.now();
       await target.click();
+      const clickDuration = Date.now() - clickStartTime;
+      
+      automationNavigationLogger.info('Element clicked via clickByText', {
+        text,
+        currentUrl,
+        clickDuration
+      });
       
       return true;
     } catch (error) {
@@ -171,8 +214,31 @@ export class ClickHandler {
         
         // Wait for navigation/render after click
         try {
+          const currentUrl = this.page.url();
+          automationNavigationLogger.info('Waiting for navigation after action execution', {
+            currentUrl,
+            waitStrategy: 'domcontentloaded',
+            timeout: 5000
+          });
+          
+          const waitStartTime = Date.now();
           await this.page.waitForLoadState('domcontentloaded', { timeout: 5000 });
-        } catch {
+          const waitDuration = Date.now() - waitStartTime;
+          const newUrl = this.page.url();
+          const urlChanged = newUrl !== currentUrl;
+          
+          automationNavigationLogger.info('Navigation wait completed', {
+            previousUrl: currentUrl,
+            newUrl,
+            urlChanged,
+            waitDuration
+          });
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          automationNavigationLogger.debug('Navigation wait timeout (expected for SPAs)', {
+            currentUrl: this.page.url(),
+            error: errorMessage
+          });
           // Timeout is okay, page might not navigate
         }
       } else if (action.type === 'wait') {

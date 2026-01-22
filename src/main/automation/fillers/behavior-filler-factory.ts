@@ -13,6 +13,7 @@ import { ConsentFiller } from './consent-filler';
 import { OtpFiller } from './otp-filler';
 import { SearchSelectFiller } from './search-select-filler';
 import { MaskedTextFiller } from './masked-text-filler';
+import { automationMappingLogger } from '../../core/logger';
 
 /**
  * BehaviorFillerFactory
@@ -24,73 +25,148 @@ export class BehaviorFillerFactory {
   /**
    * Get appropriate filler for a given field behavior
    */
-  static getFiller(behavior: FieldBehavior, page: Page): BaseFiller {
+  static getFiller(behavior: FieldBehavior, page: Page, fieldName?: string, selector?: string): BaseFiller {
+    let filler: BaseFiller;
+    let fillerName: string;
+    let mappingReason: string;
+
     switch (behavior) {
       // Text Entry Behaviors
       case FieldBehavior.TEXT_ENTRY:
       case FieldBehavior.MULTILINE_TEXT:
-        return new TextFiller(page);
+        filler = new TextFiller(page);
+        fillerName = 'TextFiller';
+        mappingReason = behavior === FieldBehavior.TEXT_ENTRY 
+          ? 'TEXT_ENTRY → TextFiller (standard text input)'
+          : 'MULTILINE_TEXT → TextFiller (textarea)';
+        break;
         
       case FieldBehavior.MASKED_INPUT:
-        return new MaskedTextFiller(page);
+        filler = new MaskedTextFiller(page);
+        fillerName = 'MaskedTextFiller';
+        mappingReason = 'MASKED_INPUT → MaskedTextFiller (formatted input like phone/SSN)';
+        break;
         
       // Choice Selection Behaviors
       case FieldBehavior.SINGLE_CHOICE_DROPDOWN:
-        return new SelectFiller(page);
+        filler = new SelectFiller(page);
+        fillerName = 'SelectFiller';
+        mappingReason = 'SINGLE_CHOICE_DROPDOWN → SelectFiller (dropdown select)';
+        break;
 
       case FieldBehavior.SINGLE_CHOICE_RADIO:
-        return new RadioFiller(page);
+        filler = new RadioFiller(page);
+        fillerName = 'RadioFiller';
+        mappingReason = 'SINGLE_CHOICE_RADIO → RadioFiller (radio button group)';
+        break;
 
       case FieldBehavior.SINGLE_CHOICE:
         // Generic single choice: prefer dropdown semantics by default
-        return new SelectFiller(page);
+        filler = new SelectFiller(page);
+        fillerName = 'SelectFiller';
+        mappingReason = 'SINGLE_CHOICE → SelectFiller (generic single choice, defaulting to dropdown)';
+        break;
         
       case FieldBehavior.SEARCH_AND_SELECT:
-        return new SearchSelectFiller(page);  // Keyboard-first strategy
+        filler = new SearchSelectFiller(page);  // Keyboard-first strategy
+        fillerName = 'SearchSelectFiller';
+        mappingReason = 'SEARCH_AND_SELECT → SearchSelectFiller (searchable dropdown with keyboard-first strategy)';
+        break;
         
       case FieldBehavior.MULTI_CHOICE:
-        return new CheckboxFiller(page);  // Works for checkbox groups
+        filler = new CheckboxFiller(page);  // Works for checkbox groups
+        fillerName = 'CheckboxFiller';
+        mappingReason = 'MULTI_CHOICE → CheckboxFiller (multiple selection checkbox group)';
+        break;
         
       // Boolean Behaviors
       case FieldBehavior.BOOLEAN_CHECKBOX:
-        return new CheckboxFiller(page);
+        filler = new CheckboxFiller(page);
+        fillerName = 'CheckboxFiller';
+        mappingReason = 'BOOLEAN_CHECKBOX → CheckboxFiller (single checkbox boolean)';
+        break;
         
       case FieldBehavior.BOOLEAN_TOGGLE:
-        return new ToggleFiller(page);
+        filler = new ToggleFiller(page);
+        fillerName = 'ToggleFiller';
+        mappingReason = 'BOOLEAN_TOGGLE → ToggleFiller (toggle switch)';
+        break;
         
       // Date/Time Behaviors  
       case FieldBehavior.DATE_PICKER:
       case FieldBehavior.DATE_TEXT:
-        return new DateFiller(page);
+        filler = new DateFiller(page);
+        fillerName = 'DateFiller';
+        mappingReason = behavior === FieldBehavior.DATE_PICKER
+          ? 'DATE_PICKER → DateFiller (date picker widget)'
+          : 'DATE_TEXT → DateFiller (text input with date format)';
+        break;
         
       case FieldBehavior.TIME_PICKER:
-        return new TextFiller(page);  // Treat as text for now
+        filler = new TextFiller(page);  // Treat as text for now
+        fillerName = 'TextFiller';
+        mappingReason = 'TIME_PICKER → TextFiller (treating as text input for now)';
+        break;
         
       // Numeric Behaviors
       case FieldBehavior.NUMERIC_INPUT:
-        return new TextFiller(page);  // Numbers are text inputs
+        filler = new TextFiller(page);  // Numbers are text inputs
+        fillerName = 'TextFiller';
+        mappingReason = 'NUMERIC_INPUT → TextFiller (numeric text input)';
+        break;
         
       case FieldBehavior.RANGE_SLIDER:
-        return new RangeSliderFiller(page);
+        filler = new RangeSliderFiller(page);
+        fillerName = 'RangeSliderFiller';
+        mappingReason = 'RANGE_SLIDER → RangeSliderFiller (slider input)';
+        break;
         
       // File Behaviors
       case FieldBehavior.FILE_UPLOAD:
       case FieldBehavior.MULTI_FILE_UPLOAD:
-        return new FileUploadFiller(page);
+        filler = new FileUploadFiller(page);
+        fillerName = 'FileUploadFiller';
+        mappingReason = behavior === FieldBehavior.FILE_UPLOAD
+          ? 'FILE_UPLOAD → FileUploadFiller (single file upload)'
+          : 'MULTI_FILE_UPLOAD → FileUploadFiller (multiple file upload)';
+        break;
         
       // Special Behaviors
       case FieldBehavior.OTP_GROUP:
-        return new OtpFiller(page);
+        filler = new OtpFiller(page);
+        fillerName = 'OtpFiller';
+        mappingReason = 'OTP_GROUP → OtpFiller (OTP input group)';
+        break;
         
       case FieldBehavior.CONSENT_CHECKBOX:
-        return new ConsentFiller(page);
+        filler = new ConsentFiller(page);
+        fillerName = 'ConsentFiller';
+        mappingReason = 'CONSENT_CHECKBOX → ConsentFiller (consent/agreement checkbox)';
+        break;
         
       // Unknown/Fallback
       case FieldBehavior.UNKNOWN:
       default:
         // Safe fallback - most fields can be treated as text
-        return new TextFiller(page);
+        filler = new TextFiller(page);
+        fillerName = 'TextFiller';
+        mappingReason = behavior === FieldBehavior.UNKNOWN
+          ? 'UNKNOWN → TextFiller (fallback for unknown behavior)'
+          : `Unknown behavior "${behavior}" → TextFiller (default fallback)`;
+        break;
     }
+
+    // Log the mapping decision
+    automationMappingLogger.info('Field behavior mapped to filler', {
+      fieldName: fieldName || 'unknown',
+      selector: selector || 'unknown',
+      behavior,
+      fillerName,
+      mappingReason,
+      timestamp: new Date().toISOString()
+    });
+
+    return filler;
   }
   
   /**

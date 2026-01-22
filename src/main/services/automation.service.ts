@@ -19,7 +19,7 @@ import {
   documentRepository,
   chatRepository
 } from '../database/repositories';
-import { logger, rawHtmlContextLogger, automationBatchLogger, fieldFillLogger, automationLoopLogger, automationCheckpointLogger } from '../core/logger';
+import { logger, rawHtmlContextLogger, automationBatchLogger, fieldFillLogger, automationLoopLogger, automationCheckpointLogger, automationNavigationLogger } from '../core/logger';
 import { createError } from '../core/error-handler';
 import { ERROR_CODES } from '../../shared/constants';
 
@@ -470,10 +470,26 @@ export class AutomationService {
   ): Promise<boolean> {
     EventEmitter.emitStatus('Dashboard detected - executing navigation...', 60);
 
+    const page = pageManager.getPage();
+    const currentUrl = page.url();
+    const jobId = this.currentJob?._id || 'unknown';
+
+    automationNavigationLogger.info('=== DASHBOARD NAVIGATION START ===', {
+      jobId,
+      currentUrl,
+      pageType: aiResult.pageType,
+      timestamp: new Date().toISOString()
+    });
+
     const actions = aiResult.actions || [];
     if (actions.length === 0) {
       logger.warn('No actions found for dashboard page');
       EventEmitter.emitStatus('No navigation actions found', 50);
+      automationNavigationLogger.warn('No navigation actions found for dashboard page', {
+        jobId,
+        currentUrl,
+        pageType: aiResult.pageType
+      });
       return false;
     }
 
@@ -481,6 +497,15 @@ export class AutomationService {
     if (actions.length > 1) {
       logger.warn(`Gemini returned ${actions.length} actions, but only executing the first one`, {
         allActions: actions.map((a: any) => a.expectedText)
+      });
+      automationNavigationLogger.warn('Multiple actions detected, using first action only', {
+        jobId,
+        totalActions: actions.length,
+        allActions: actions.map((a: any) => ({
+          intent: a.intent,
+          expectedText: a.expectedText,
+          selector: a.selector || a.selectorHint
+        }))
       });
     }
     const primaryAction = actions[0];
@@ -493,6 +518,18 @@ export class AutomationService {
       description: primaryAction.description || primaryAction.expectedText || '',
     };
 
+    automationNavigationLogger.info('Preparing to execute dashboard navigation action', {
+      jobId,
+      currentUrl,
+      action: {
+        intent: primaryAction.intent,
+        type: mappedAction.type,
+        expectedText: mappedAction.expectedText,
+        selector: mappedAction.selector,
+        description: mappedAction.description
+      }
+    });
+
     logger.info('Executing dashboard action', {
       intent: primaryAction.intent,
       expectedText: primaryAction.expectedText,
@@ -500,25 +537,61 @@ export class AutomationService {
     });
 
     // Execute action (singular)
+    const actionStartTime = Date.now();
     const success = await pageManager.executeActions([mappedAction]);
+    const actionDuration = Date.now() - actionStartTime;
 
     if (success) {
+      automationNavigationLogger.info('Navigation action executed successfully', {
+        jobId,
+        actionDuration,
+        action: {
+          intent: primaryAction.intent,
+          expectedText: mappedAction.expectedText,
+          selector: mappedAction.selector
+        }
+      });
+
       EventEmitter.emitStatus('Navigation executed, waiting for new page...', 80);
 
       // Proper navigation wait - CRITICAL for dashboard actions
       // Rule: Wait for page to be fully loaded before starting field extraction
       try {
         logger.info('Waiting for page navigation and load to complete...');
-        const page = pageManager.getPage();
+        
+        automationNavigationLogger.info('Waiting for page navigation to complete', {
+          jobId,
+          currentUrl,
+          waitStrategy: 'domcontentloaded',
+          timeout: 10000
+        });
         
         // Wait for navigation to complete (either domcontentloaded or networkidle)
+        const waitStartTime = Date.now();
         await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+        const waitDuration = Date.now() - waitStartTime;
+        
+        automationNavigationLogger.info('Page load state reached', {
+          jobId,
+          waitDuration,
+          loadState: 'domcontentloaded'
+        });
         
         // Additional small delay to ensure DOM is fully rendered
         await new Promise(r => setTimeout(r, 500));
         
         // Get the new URL after navigation
         const newUrl = page.url();
+        const urlChanged = newUrl !== currentUrl;
+        
+        automationNavigationLogger.info('Navigation completed', {
+          jobId,
+          previousUrl: currentUrl,
+          newUrl,
+          urlChanged,
+          navigationDuration: Date.now() - actionStartTime
+        });
+        
         logger.info(`Page loaded successfully. New URL: ${newUrl}`);
         
         // CRITICAL: Update job URL and clear checkpoint so next iteration processes the NEW page
@@ -526,17 +599,47 @@ export class AutomationService {
           await automationJobRepository.updateCurrentUrl(this.currentJob._id, newUrl);
           await automationJobRepository.clearCheckpoint(this.currentJob._id);
           automationLoopLogger.info(`Dashboard navigation complete. Cleared checkpoint for job ${this.currentJob._id}. New URL: ${newUrl}`);
+          
+          automationNavigationLogger.info('Job state updated after navigation', {
+            jobId: this.currentJob._id,
+            newUrl,
+            checkpointCleared: true
+          });
         }
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
         logger.warn('Navigation wait timeout (page might not have navigated)', err);
+        automationNavigationLogger.warn('Navigation wait timeout', {
+          jobId,
+          currentUrl,
+          error: errorMessage,
+          note: 'Page might be SPA without full reload'
+        });
         // Still proceed - might be SPA without full reload
       }
+
+      automationNavigationLogger.info('=== DASHBOARD NAVIGATION COMPLETE ===', {
+        jobId,
+        success: true,
+        totalDuration: Date.now() - actionStartTime
+      });
 
       // No recursive call here; the main runJobLoop will pick up the next page.
       return true;
     } else {
       EventEmitter.emitStatus('Navigation action failed', 50);
       logger.error('Failed to execute dashboard actions');
+      automationNavigationLogger.error('=== DASHBOARD NAVIGATION FAILED ===', {
+        jobId,
+        currentUrl,
+        action: {
+          intent: primaryAction.intent,
+          expectedText: mappedAction.expectedText,
+          selector: mappedAction.selector
+        },
+        duration: actionDuration,
+        reason: 'Action execution returned false'
+      });
       return false;
     }
   }
@@ -638,7 +741,7 @@ export class AutomationService {
             reasoning: field.reason
           };
 
-          const filler = BehaviorFillerFactory.getFiller(field.behavior, pageManager.getPage());
+          const filler = BehaviorFillerFactory.getFiller(field.behavior, pageManager.getPage(), field.fieldName, field.selector);
           const fillerName = BehaviorFillerFactory.getFillerName(field.behavior);
 
           fieldFillLogger.info('Starting field fill', {
@@ -848,6 +951,7 @@ export class AutomationService {
   async approveMapping(_mapping: FormMapping) {
     if (!this.currentJob) return;
 
+    const jobId = this.currentJob._id;
     EventEmitter.emitStatus('Submitting form...', 90);
 
     try {
@@ -857,26 +961,71 @@ export class AutomationService {
       const portalDomain = new URL(portal?.url || 'http://localhost').hostname;
       const page = await browserConnector.getPageByUrl(portalDomain);
       const pageManager = new PageManager(page);
+      const currentUrl = page.url();
+
+      automationNavigationLogger.info('=== FORM SUBMISSION NAVIGATION START ===', {
+        jobId,
+        currentUrl,
+        timestamp: new Date().toISOString()
+      });
 
       // Click submit button using our robust method
+      const submitStartTime = Date.now();
       const clicked = await pageManager.clickSubmitButton();
+      const submitDuration = Date.now() - submitStartTime;
 
       if (!clicked) {
         EventEmitter.emitStatus('Could not find submit button', 90);
         logger.warn('No submit button found on page');
+        automationNavigationLogger.error('Submit button not found', {
+          jobId,
+          currentUrl,
+          duration: submitDuration
+        });
         return;
       }
+
+      automationNavigationLogger.info('Submit button clicked successfully', {
+        jobId,
+        currentUrl,
+        clickDuration: submitDuration
+      });
 
       EventEmitter.emitStatus('Waiting for navigation...', 95);
 
       try {
+        automationNavigationLogger.info('Waiting for form submission navigation', {
+          jobId,
+          currentUrl,
+          waitStrategy: 'domcontentloaded',
+          timeout: 10000
+        });
+
+        const waitStartTime = Date.now();
         await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+        const waitDuration = Date.now() - waitStartTime;
+        
+        automationNavigationLogger.info('Page load state reached after form submission', {
+          jobId,
+          waitDuration,
+          loadState: 'domcontentloaded'
+        });
         
         // Additional small delay to ensure DOM is fully rendered
         await new Promise(r => setTimeout(r, 500));
         
         // Get the new URL after form submission navigation
         const newUrl = page.url();
+        const urlChanged = newUrl !== currentUrl;
+        
+        automationNavigationLogger.info('Form submission navigation completed', {
+          jobId,
+          previousUrl: currentUrl,
+          newUrl,
+          urlChanged,
+          totalNavigationDuration: Date.now() - submitStartTime
+        });
+        
         logger.info(`Form submission navigation completed. New URL: ${newUrl}`);
         
         // CRITICAL: Update job URL and clear checkpoint so next iteration processes the NEW page
@@ -884,9 +1033,28 @@ export class AutomationService {
           await automationJobRepository.updateCurrentUrl(this.currentJob._id, newUrl);
           await automationJobRepository.clearCheckpoint(this.currentJob._id);
           automationLoopLogger.info(`Form submission complete. Cleared checkpoint for job ${this.currentJob._id}. New URL: ${newUrl}`);
+          
+          automationNavigationLogger.info('Job state updated after form submission', {
+            jobId: this.currentJob._id,
+            newUrl,
+            checkpointCleared: true
+          });
         }
-      } catch {
+
+        automationNavigationLogger.info('=== FORM SUBMISSION NAVIGATION COMPLETE ===', {
+          jobId,
+          success: true,
+          totalDuration: Date.now() - submitStartTime
+        });
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
         logger.warn('Nav timeout, checking if URL changed');
+        automationNavigationLogger.warn('Form submission navigation wait timeout', {
+          jobId,
+          currentUrl,
+          error: errorMessage,
+          note: 'Page might be SPA or URL might have changed'
+        });
       }
 
       // Loop to next page will be handled by runJobLoop based on updated URL/state.
