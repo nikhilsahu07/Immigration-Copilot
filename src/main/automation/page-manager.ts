@@ -74,8 +74,20 @@ export class PageManager {
 
   async extractHtml(): Promise<string> {
       try {
-           const raw = await this.page.content();
-           return cleanHtml(raw);
+          // CRITICAL: Ensure page is fully loaded before extracting HTML
+          // Wait for page to be ready to ensure complete DOM structure
+          try {
+            await this.page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+            
+            // Small delay to ensure DOM is fully rendered
+            await new Promise(r => setTimeout(r, 200));
+          } catch (err) {
+            logger.warn('HTML extraction: Page load wait timeout, proceeding anyway', err);
+            // Continue anyway - page might be ready even if wait timed out
+          }
+
+          const raw = await this.page.content();
+          return cleanHtml(raw);
       } catch (e) {
           logger.error('Failed to extract HTML', e);
           throw e;

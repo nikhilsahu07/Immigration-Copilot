@@ -17,6 +17,25 @@ export class ScreenshotCapture {
    */
   async capture(): Promise<string> {
     try {
+      // CRITICAL: Ensure page is fully loaded before capturing screenshot
+      // Wait for page to be ready to ensure accurate screenshot
+      try {
+        await this.page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+        
+        // Wait for network idle to ensure images and resources are loaded
+        try {
+          await this.page.waitForLoadState('networkidle', { timeout: 5000 });
+        } catch {
+          // networkidle timeout is acceptable - page might be ready but have background requests
+        }
+        
+        // Small delay to ensure visual rendering is complete
+        await new Promise(r => setTimeout(r, 200));
+      } catch (err) {
+        logger.warn('Screenshot: Page load wait timeout, proceeding anyway', err);
+        // Continue anyway - page might be ready even if wait timed out
+      }
+
       // Set fixed viewport for consistency and to control token usage
       await this.page.setViewportSize({ width: 1280, height: 800 });
       

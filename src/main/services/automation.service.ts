@@ -258,6 +258,31 @@ export class AutomationService {
 
       const pageManager = new PageManager(page);
 
+      // CRITICAL: Ensure page is fully loaded before extraction operations
+      // Wait for page to be ready (domcontentloaded ensures DOM is ready)
+      try {
+        logger.info('Waiting for page to be fully loaded before extraction...');
+        await page.waitForLoadState('domcontentloaded', { timeout: 15000 });
+        
+        // Additional wait for network idle to ensure all resources are loaded
+        // This is especially important for SPAs and dynamic content
+        try {
+          await page.waitForLoadState('networkidle', { timeout: 5000 });
+        } catch {
+          // networkidle timeout is okay - page might be fully loaded but still have background requests
+          logger.debug('networkidle timeout (page may still be loading resources)');
+        }
+        
+        // Small delay to ensure DOM is fully rendered and stable
+        await new Promise(r => setTimeout(r, 300));
+        
+        logger.info('Page load confirmed, proceeding with extraction');
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        logger.warn(`Page load wait timeout: ${errorMessage}. Proceeding anyway - page might be ready.`);
+        // Continue anyway - page might be ready even if wait timed out
+      }
+
       // Update job with current URL for resume support
       const currentUrl = page.url();
       if (this.currentJob) {
