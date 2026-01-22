@@ -58,13 +58,6 @@ export const logger = winston.createLogger({
       maxsize: 5 * 1024 * 1024,
       maxFiles: 5,
     }),
-    // Automation log file
-    new winston.transports.File({
-      filename: path.join(logDir, 'automation.log'),
-      level: 'info',
-      maxsize: 10 * 1024 * 1024,
-      maxFiles: 3,
-    }),
   ],
   exceptionHandlers: [
     new winston.transports.File({

@@ -277,20 +277,18 @@ export class AutomationService {
         htmlFields,
       });
 
-      // 2. (Removed) Do NOT send raw/cleaned HTML context to Gemini, even when screenshots are enabled.
-      if (job.attachScreenshots) {
-        try {
-          const cleaned = await pageManager.extractHtml();
-          rawHtmlContextLogger.info(
-            `--- RAW HTML CONTEXT ---\n` +
-              `TIMESTAMP: ${new Date().toISOString()}\n` +
-              `URL: ${currentUrl}\n\n` +
-              `${cleaned}\n` +
-              `------------------------\n`
-          );
-        } catch {
-          // Logging failure should never break automation
-        }
+      // 2. Always log raw HTML/DOM structure for debugging (not sent to Gemini)
+      try {
+        const cleaned = await pageManager.extractHtml();
+        rawHtmlContextLogger.info(
+          `--- RAW HTML CONTEXT ---\n` +
+            `TIMESTAMP: ${new Date().toISOString()}\n` +
+            `URL: ${currentUrl}\n\n` +
+            `${cleaned}\n` +
+            `------------------------\n`
+        );
+      } catch {
+        // Logging failure should never break automation
       }
 
       // 3. Capture Screenshot (if enabled)
