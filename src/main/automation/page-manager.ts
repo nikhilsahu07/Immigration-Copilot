@@ -1,7 +1,7 @@
 
 import { Page } from 'playwright-core';
 import { logger } from '../core/logger';
-import { cleanHtml } from './page/html-extractor';
+import { cleanHtml } from './page/html-cleaner';
 import { FieldExtractor } from './page/field-extractor';
 import { BaseFiller, AutomatedField } from './fillers/base-filler';
 import { TextFiller } from './fillers/text-filler';
