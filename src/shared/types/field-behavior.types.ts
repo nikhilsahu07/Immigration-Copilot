@@ -69,7 +69,8 @@ export enum FieldStatus {
 // Enhanced field description from AI
 export interface BehaviorField {
   // Core Identity
-  selector: string;
+  fieldId?: string;  // Primary identifier from canonical schema (REQUIRED for semantic discovery)
+  selector?: string;  // Fallback selector (optional, for backward compatibility)
   fieldName: string;
   behavior: FieldBehavior;
   intent: string;  // Semantic meaning (e.g., "citizenship_country", "passport_number")
@@ -96,7 +97,8 @@ export interface IntentAction {
   intent: ActionIntent;
   description: string;
   expectedText: string;
-  selectorHint?: string;  // Hint for finding element, not a command
+  fieldId?: string;  // Optional - if action button is in canonical fields
+  selectorHint?: string;  // Fallback hint for finding element (deprecated, use fieldId)
   confidence: ConfidenceLevel;
 }
 

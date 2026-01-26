@@ -2,6 +2,8 @@
 
 import { Page } from 'playwright-core';
 import { logger } from '../../core/logger';
+import { FieldResolver } from '../utils/field-resolver';
+import { CanonicalField } from '../../../shared/types/automation.types';
 
 // Strategy: How we attempt to fill (broad categories)
 export enum FillStrategy {
@@ -52,23 +54,96 @@ export interface AutomatedField {
     fieldName: string;
     fieldLabel: string;
     fieldType: string;
-    selector: string;
+    selector?: string;  // Optional - kept for backward compatibility
     value: unknown;
     confidence?: string;
     reasoning?: string;
+    // New semantic fields
+    fieldId?: string;  // Primary identifier from canonical schema
+    accessibleName?: string;  // Semantic name for field discovery
+    role?: string;  // ARIA role
+    labels?: {
+      labelText?: string | null;
+      ariaLabel?: string | null;
+      placeholder?: string | null;
+    };
+    // Resolved locator (set by FieldResolver)
+    resolvedLocator?: any;
+    resolvedStrategy?: string;
 }
 
 export abstract class BaseFiller {
-  constructor(protected page: Page, protected options: Record<string, unknown> = {}) {}
+  protected fieldResolver: FieldResolver;
+  protected canonicalField?: CanonicalField;
+
+  constructor(protected page: Page, protected options: Record<string, unknown> = {}) {
+    this.fieldResolver = new FieldResolver(page);
+  }
+
+  /**
+   * Set canonical field for semantic discovery
+   */
+  setCanonicalField(field: CanonicalField): void {
+    this.canonicalField = field;
+  }
 
   /**
    * Main fill method - progressive resolution with EARLY EXIT
-   * Exit immediately when a strategy succeeds AND verification passes
-   * Order: NATIVE → DOM → UI_LIBRARY → KEYBOARD (with retry)
+   * Uses SEMANTIC-FIRST field discovery (Playwright best practice)
+   * 
+   * RESOLUTION PRIORITY:
+   * 1. Semantic discovery via FieldResolver (getByRole, getByLabel, etc.) - PRIMARY
+   * 2. Selector fallback - ONLY if semantic discovery fails - FALLBACK
+   * 
+   * Fill strategy order: NATIVE → DOM → UI_LIBRARY → KEYBOARD (with retry)
    */
   async fill(field: AutomatedField): Promise<boolean> {
     const startTime = Date.now();
     const attempts: FillResult[] = [];
+
+    // ============================================
+    // PRIMARY: Semantic field discovery
+    // ============================================
+    // Use FieldResolver to find field via semantic locators (getByRole, getByLabel, etc.)
+    // This is the PRIMARY resolution path - selectors are FALLBACK only
+    if (this.canonicalField && !field.resolvedLocator) {
+      const resolved = await this.fieldResolver.resolveField(this.canonicalField);
+      if (resolved) {
+        field.resolvedLocator = resolved.locator;
+        field.resolvedStrategy = resolved.strategy;
+        logger.debug(`[PRIMARY] Resolved field "${field.fieldLabel}" using semantic strategy: ${resolved.strategy}`);
+      } else {
+        // Semantic discovery failed - try FALLBACK selector if available
+        if (field.selector) {
+          logger.warn(
+            `[FALLBACK] Semantic discovery failed for "${field.fieldLabel}", ` +
+            `using selector fallback: ${field.selector}`
+          );
+          field.resolvedLocator = this.page.locator(field.selector);
+          field.resolvedStrategy = `FALLBACK:selector("${field.selector}")`;
+        } else {
+          logger.error(
+            `Cannot resolve field "${field.fieldLabel}" - ` +
+            `semantic discovery failed and no fallback selector available`
+          );
+          return false;
+        }
+      }
+    } else if (field.selector && !field.resolvedLocator) {
+      // No canonical field available - use selector as last resort
+      // This should be rare - ideally all fields have canonical data
+      logger.warn(
+        `[FALLBACK] No canonical field for "${field.fieldLabel}", ` +
+        `using selector fallback: ${field.selector}`
+      );
+      field.resolvedLocator = this.page.locator(field.selector);
+      field.resolvedStrategy = `FALLBACK:selector("${field.selector}")`;
+    }
+
+    if (!field.resolvedLocator) {
+      logger.error(`Cannot fill field "${field.fieldLabel}" - no locator available (semantic or fallback)`);
+      return false;
+    }
     
     // Define strategy chain for clear logging
     const strategies: Array<{ name: string; executor: () => Promise<FillResult> }> = [
@@ -122,8 +197,20 @@ export abstract class BaseFiller {
   protected abstract verifyFill(field: AutomatedField): Promise<VerificationResult>;
 
   // Helper methods
-  protected async detectLibrary(selector: string): Promise<UILibrary> {
+  protected async detectLibrary(locatorOrSelector: any): Promise<UILibrary> {
     try {
+      // Handle both locator and selector
+      const selector = typeof locatorOrSelector === 'string' 
+        ? locatorOrSelector 
+        : await locatorOrSelector.evaluate((el: Element) => {
+            // Generate a selector for the element
+            if (el.id) return `#${el.id}`;
+            if (el.className) return `.${Array.from(el.classList)[0]}`;
+            return el.tagName.toLowerCase();
+          }).catch(() => '');
+
+      if (!selector) return UILibrary.UNKNOWN;
+
       const result = await this.page.evaluate((sel) => {
         const el = document.querySelector(sel);
         if (!el) return UILibrary.UNKNOWN;
@@ -176,18 +263,31 @@ export abstract class BaseFiller {
     }
   }
 
-  protected async captureDOMSnapshot(selector: string): Promise<FillResult['domSnapshot']> {
+  protected async captureDOMSnapshot(locatorOrSelector: any): Promise<FillResult['domSnapshot']> {
     try {
-      return await this.page.evaluate((sel) => {
-        const el = document.querySelector(sel);
-        if (!el) return undefined;
-        return {
-          tag: el.tagName.toLowerCase(),
-          classes: Array.from(el.classList),
-          ariaDisabled: el.getAttribute('aria-disabled') || undefined,
-          ariaHidden: el.getAttribute('aria-hidden') || undefined,
-        };
-      }, selector);
+      // Handle both locator and selector
+      if (typeof locatorOrSelector === 'string') {
+        return await this.page.evaluate((sel) => {
+          const el = document.querySelector(sel);
+          if (!el) return undefined;
+          return {
+            tag: el.tagName.toLowerCase(),
+            classes: Array.from(el.classList),
+            ariaDisabled: el.getAttribute('aria-disabled') || undefined,
+            ariaHidden: el.getAttribute('aria-hidden') || undefined,
+          };
+        }, locatorOrSelector);
+      } else {
+        // It's a locator
+        return await locatorOrSelector.evaluate((el: Element) => {
+          return {
+            tag: el.tagName.toLowerCase(),
+            classes: Array.from(el.classList),
+            ariaDisabled: el.getAttribute('aria-disabled') || undefined,
+            ariaHidden: el.getAttribute('aria-hidden') || undefined,
+          };
+        });
+      }
     } catch {
       return undefined;
     }
@@ -224,23 +324,16 @@ export abstract class BaseFiller {
     });
   }
 
-  // Legacy helper methods (for backward compatibility)
-  protected async scrollToElement(selector: string) {
+  // Helper methods for working with locators
+  protected async scrollToLocator(locator: any) {
     try {
-      const element = await this.page.$(selector);
-      if (element) {
-        await element.scrollIntoViewIfNeeded();
-      }
+      await locator.scrollIntoViewIfNeeded();
     } catch {
-       // Ignore scroll errors
+      // Ignore scroll errors
     }
   }
 
-  protected async findElement(selector: string) {
-    try {
-      return await this.page.$(selector);
-    } catch {
-      return null;
-    }
+  protected getLocator(field: AutomatedField): any {
+    return field.resolvedLocator || (field.selector ? this.page.locator(field.selector) : null);
   }
 }

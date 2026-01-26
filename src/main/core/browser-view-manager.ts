@@ -68,7 +68,7 @@ export class BrowserViewManager {
         logger.info('BrowserView hidden');
       } catch (error) {
         // Window might be destroyed, ignore the error
-        logger.debug('Could not remove BrowserView (window may be destroyed)');
+        logger.debug(`Could not remove BrowserView (window may be destroyed) ${error}`);
       }
     }
   }
@@ -119,6 +119,28 @@ export class BrowserViewManager {
     return this.browserView?.webContents;
   }
 
+  /**
+   * Get the current URL of the browser view
+   * Returns null if browser view is not available or not loaded
+   */
+  getCurrentURL(): string | null {
+    if (!this.browserView?.webContents) {
+      return null;
+    }
+    
+    try {
+      const url = this.browserView.webContents.getURL();
+      // Return null for empty URLs or about:blank
+      if (!url || url === 'about:blank') {
+        return null;
+      }
+      return url;
+    } catch (error) {
+      logger.debug('Could not get current URL from BrowserView', error);
+      return null;
+    }
+  }
+
   destroy(): void {
     if (this.browserView) {
       // Only try to hide if window is not destroyed
@@ -127,7 +149,7 @@ export class BrowserViewManager {
           this.hide();
         } catch (error) {
           // Ignore errors if window is already destroyed
-          logger.debug('Could not hide BrowserView during destroy');
+          logger.debug(`Could not hide BrowserView during destroy ${error}`);
         }
       }
       
@@ -136,7 +158,7 @@ export class BrowserViewManager {
         try {
           this.browserView.webContents.close();
         } catch (error) {
-          logger.debug('Could not close BrowserView webContents');
+          logger.debug(`Could not close BrowserView webContents ${error}`);
         }
       }
       

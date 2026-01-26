@@ -68,7 +68,7 @@ export class WindowManager {
     });
 
     // Log console messages from renderer
-    this.mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    this.mainWindow.webContents.on('console-message', (event, level, message, _line, _sourceId) => {
       const levelMap = { 0: 'DEBUG', 1: 'INFO', 2: 'WARN', 3: 'ERROR' };
       logger.info(`[Renderer ${levelMap[level as keyof typeof levelMap] || 'LOG'}] ${message}`);
     });

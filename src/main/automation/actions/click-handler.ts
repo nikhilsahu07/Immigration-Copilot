@@ -180,29 +180,30 @@ export class ClickHandler {
 
   /**
    * Execute a list of actions with multiple fallback strategies.
-   * Tries: selector+text, role, text, plain selector
+   * Now uses semantic discovery (getByRole, getByText) instead of selectors
+   * Tries: role+text, text, selector (fallback)
    */
-  async executeActions(actions: { type: string; selector?: string; description: string; expectedText?: string }[]): Promise<boolean> {
+  async executeActions(actions: { type: string; selector?: string; description: string; expectedText?: string; fieldId?: string }[]): Promise<boolean> {
     for (const action of actions) {
       if (action.type === 'click') {
         let clicked = false;
         
-        // Strategy 1: Use selector + expectedText if both provided
-        if (action.selector && action.expectedText && !action.selector.includes(':contains') && !action.selector.includes(':has(')) {
-          clicked = await this.clickButtonWithText(action.selector, action.expectedText);
-        }
-        
-        // Strategy 2: If expectedText exists, try getByRole('button') with name
+        // Strategy 1: If expectedText exists, try getByRole('button') with name (most reliable for SPAs)
         if (!clicked && action.expectedText) {
           clicked = await this.clickByRole('button', action.expectedText);
         }
         
-        // Strategy 3: Try getByText as last resort
+        // Strategy 2: Try getByText (semantic text matching)
         if (!clicked && action.expectedText) {
           clicked = await this.clickByText(action.expectedText);
         }
         
-        // Strategy 4: If no expectedText but selector exists, try plain selector
+        // Strategy 3: Use selector + expectedText if both provided (fallback)
+        if (!clicked && action.selector && action.expectedText && !action.selector.includes(':contains') && !action.selector.includes(':has(')) {
+          clicked = await this.clickButtonWithText(action.selector, action.expectedText);
+        }
+        
+        // Strategy 4: If no expectedText but selector exists, try plain selector (last resort)
         if (!clicked && action.selector && !action.selector.includes(':contains') && !action.selector.includes(':has(')) {
           clicked = await this.executeClick(action.selector, action.description);
         }

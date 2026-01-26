@@ -35,7 +35,8 @@ export type WorkflowStep =
 export interface AutomationCheckpoint {
   step: WorkflowStep;
   currentUrl: string;
-  htmlFields?: HtmlField[];
+  htmlFields?: HtmlField[]; // @deprecated - kept for backward compatibility
+  canonicalFields?: CanonicalField[]; // New canonical schema
   screenshotBase64?: string;
   aiResult?: any;
   fillResults?: Array<{
@@ -191,4 +192,119 @@ export interface CaptchaDetection {
   };
   shouldPause: boolean;
   message: string;
+}
+
+// Canonical Field Schema Types
+
+/**
+ * Semantic control types for form fields
+ */
+export type ControlType = 
+  | 'text' | 'email' | 'password' | 'tel' | 'number' | 'url'
+  | 'checkbox' | 'radio' 
+  | 'select' | 'multiselect' | 'search-select'
+  | 'date' | 'datetime-local' | 'time' | 'month' | 'week'
+  | 'file' | 'range' | 'color'
+  | 'textarea';
+
+/**
+ * Input modes for interaction hints
+ */
+export type InputMode = 'type' | 'click' | 'select' | 'check' | 'upload';
+
+/**
+ * ARIA roles for form elements
+ */
+export type AriaRole = 
+  | 'textbox' | 'checkbox' | 'radio' | 'combobox' | 'listbox' 
+  | 'button' | 'link' | 'tab' | 'menuitem';
+
+/**
+ * Canonical field schema - semantic, structured representation of form fields
+ * 
+ * This schema uses `accessibleName` as the primary identifier (robust for SPAs)
+ * and `fallback.selector` as a last resort. This solves selector fragility issues
+ * in single-page applications where DOM structure changes frequently.
+ * 
+ * @see CANONICAL_SCHEMA_MIGRATION_PLAN.md for migration details
+ */
+export interface CanonicalField {
+  /** Stable semantic ID (hash-based, consistent across DOM changes) */
+  fieldId: string;
+  
+  /** HTML tag name */
+    tag: 'input' | 'select' | 'textarea' | 'button' | 'div' | 'span' | 'a';
+  
+  /** Semantic control type (e.g., 'text', 'email', 'select', 'checkbox') */
+  controlType: ControlType;
+  
+  /** ARIA role (inferred from element attributes and type) */
+  role: AriaRole | null;
+  
+  /** PRIMARY IDENTIFIER - Computed from labels/aria/placeholder (semantic, robust) */
+  accessibleName: string;
+  
+  /** Label information from various sources */
+  labels: {
+    labelText: string | null;
+    ariaLabel: string | null;
+    ariaLabelledBy: string | null;
+    placeholder: string | null;
+  };
+  
+  /** Group information (for radio/checkbox groups) */
+  group: {
+    groupName: string | null;
+    groupLabel: string | null;
+  } | null;
+  
+  /** Options for select/radio elements */
+  options: Array<{
+    value: string | null;
+    label: string;
+    selected: boolean;
+    disabled: boolean;
+  }>;
+  
+  /** Current state of the field */
+  state: {
+    required: boolean;
+    disabled: boolean;
+    readonly: boolean;
+    visible: boolean;
+    checked: boolean;
+    value: string | null;
+  };
+  
+  /** Validation constraints */
+  validation: {
+    min: number | null;
+    max: number | null;
+    pattern: string | null;
+    minLength: number | null;
+    maxLength: number | null;
+  };
+  
+  /** Contextual information for disambiguation */
+  context: {
+    formIndex: number;
+    sectionHeading: string | null;
+    positionInForm: number;
+  };
+  
+  /** Hints for how to interact with this field */
+  interactionHints: {
+    inputMode: InputMode;
+    blurAfterInput: boolean;
+    requiresTypingDelay: boolean;
+    opensDropdown: boolean;
+    isSearchable: boolean;
+  };
+  
+  /** Fallback selectors (last resort when semantic matching fails) */
+  fallback: {
+    /** CSS selector (validated unique) */
+    selector: string | null;
+    // Note: xpath removed per user request - not used in practice
+  };
 }

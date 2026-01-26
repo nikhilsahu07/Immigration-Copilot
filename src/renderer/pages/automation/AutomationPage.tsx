@@ -84,11 +84,16 @@ export function AutomationPage() {
 
   // When portal is selected, show BrowserView immediately
   // When portal is cleared, hide BrowserView
+  // IMPORTANT: Don't reload URL when automation is running - preserve current page state
   useEffect(() => {
     if (selectedPortal) {
       const portal = portals.find(p => p._id === selectedPortal);
       if (portal) {
-        loadUrl(portal.url);
+        // Only load URL if automation is NOT running
+        // If automation is running, the page state should be preserved
+        if (!isRunning) {
+          loadUrl(portal.url);
+        }
         setBrowserViewShown(true);
       }
     } else {

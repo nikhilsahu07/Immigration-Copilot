@@ -8,49 +8,63 @@ import { BaseFiller, AutomatedField, FillResult, FillStrategy, UILibrary, Verifi
  */
 export class RangeSliderFiller extends BaseFiller {
   /**
-   * Strategy 1: Native fill for input[type="range"]
+   * Strategy 1: Native fill for input[type="range"] (using semantic locator)
    */
   protected async tryNativeFill(field: AutomatedField): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.NATIVE,
+        error: 'No locator available',
+      };
+    }
+
     try {
-      await this.scrollToElement(field.selector);
+      await this.scrollToLocator(locator);
       const value = String(field.value);
-      await this.page.fill(field.selector, value, { timeout: 3000 });
+      await locator.fill(value, { timeout: 3000 });
       
       return {
         success: true,
         strategy: FillStrategy.NATIVE,
-        uiLibrary: await this.detectLibrary(field.selector),
+        uiLibrary: await this.detectLibrary(locator),
       };
     } catch (error) {
       return {
         success: false,
         strategy: FillStrategy.NATIVE,
         error: String(error),
-        domSnapshot: await this.captureDOMSnapshot(field.selector),
+        domSnapshot: await this.captureDOMSnapshot(locator),
       };
     }
   }
 
   /**
-   * Strategy 2: DOM manipulation for range inputs
+   * Strategy 2: DOM manipulation for range inputs (using semantic locator)
    */
   protected async tryDomFill(field: AutomatedField): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.DOM,
+        error: 'No locator available',
+      };
+    }
+
     try {
       const value = Number(field.value);
       
-      const success = await this.page.evaluate(({ selector, val }) => {
-        const el = document.querySelector(selector);
-        if (!el) return false;
-        
+      const success = await locator.evaluate((el: Element, val: number) => {
         if (el instanceof HTMLInputElement && el.type === 'range') {
           el.value = String(val);
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
           return true;
         }
-        
         return false;
-      }, { selector: field.selector, val: value });
+      }, value);
       
       return {
         success,
@@ -67,26 +81,35 @@ export class RangeSliderFiller extends BaseFiller {
   }
 
   /**
-   * Strategy 3: UI Library-specific handling (noUiSlider, ion.rangeSlider, etc.)
+   * Strategy 3: UI Library-specific handling (using semantic locator)
    */
   protected async tryUILibraryFill(field: AutomatedField): Promise<FillResult> {
-    const library = await this.detectLibrary(field.selector);
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.UI_LIBRARY,
+        error: 'No locator available',
+      };
+    }
+
+    const library = await this.detectLibrary(locator);
     const value = Number(field.value);
     
     try {
       // Try noUiSlider API
-      const noUiSuccess = await this.page.evaluate(({ sel, val }) => {
+      const noUiSuccess = await locator.evaluate((el: Element, val: number) => {
         try {
-          const el = document.querySelector(sel) as any;
-          if (el && el.noUiSlider) {
-            el.noUiSlider.set(val);
+          const sliderEl = el as any;
+          if (sliderEl && sliderEl.noUiSlider) {
+            sliderEl.noUiSlider.set(val);
             return true;
           }
         } catch {
           return false;
         }
         return false;
-      }, { sel: field.selector, val: value });
+      }, value);
       
       if (noUiSuccess) {
         return {
@@ -97,9 +120,9 @@ export class RangeSliderFiller extends BaseFiller {
       }
       
       // Try ion.rangeSlider API
-      const ionSuccess = await this.page.evaluate(({ sel, val }) => {
+      const ionSuccess = await locator.evaluate((el: Element, val: number) => {
         try {
-          const $el = (window as any).$(sel);
+          const $el = (window as any).$(el);
           if ($el && $el.data && $el.data('ionRangeSlider')) {
             $el.data('ionRangeSlider').update({ from: val });
             return true;
@@ -108,7 +131,7 @@ export class RangeSliderFiller extends BaseFiller {
           return false;
         }
         return false;
-      }, { sel: field.selector, val: value });
+      }, value);
       
       if (ionSuccess) {
         return {
@@ -135,9 +158,18 @@ export class RangeSliderFiller extends BaseFiller {
   }
 
   /**
-   * Strategy 4: Keyboard - Arrow keys to adjust value
+   * Strategy 4: Keyboard - Arrow keys to adjust value (using semantic locator)
    */
   protected async tryKeyboardFill(field: AutomatedField, retryCount: number): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.KEYBOARD,
+        error: 'No locator available',
+      };
+    }
+
     try {
       if (retryCount > 0) {
         await this.page.keyboard.press('Escape');
@@ -147,14 +179,14 @@ export class RangeSliderFiller extends BaseFiller {
       const targetValue = Number(field.value);
       
       // Focus the slider
-      await this.page.click(field.selector);
+      await locator.click();
       await this.page.waitForTimeout(100);
       
       // Get current value
-      const currentValue = await this.page.evaluate((sel) => {
-        const el = document.querySelector(sel) as HTMLInputElement;
-        return el ? Number(el.value) : 0;
-      }, field.selector);
+      const currentValue = await locator.evaluate((el: Element) => {
+        const inputEl = el as HTMLInputElement;
+        return inputEl ? Number(inputEl.value) : 0;
+      });
       
       // Calculate steps needed
       const diff = targetValue - currentValue;
@@ -181,16 +213,26 @@ export class RangeSliderFiller extends BaseFiller {
   }
 
   /**
-   * Verification: Check slider value
+   * Verification: Check slider value (using semantic locator)
    */
   protected async verifyFill(field: AutomatedField): Promise<VerificationResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        passed: false,
+        actual: undefined,
+        expected: String(field.value),
+        reason: 'No locator available for verification',
+      };
+    }
+
     try {
       const expected = Number(field.value);
       
-      const actual = await this.page.evaluate((selector) => {
-        const el = document.querySelector(selector) as HTMLInputElement;
-        return el ? Number(el.value) : null;
-      }, field.selector);
+      const actual = await locator.evaluate((el: Element) => {
+        const inputEl = el as HTMLInputElement;
+        return inputEl ? Number(inputEl.value) : null;
+      });
       
       // Allow small tolerance for slider precision
       const tolerance = 1;

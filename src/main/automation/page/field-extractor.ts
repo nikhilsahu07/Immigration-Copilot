@@ -1,7 +1,14 @@
 
 import { Page } from 'playwright-core';
-import { HtmlField } from '../../../shared/types/automation.types';
+import { HtmlField, CanonicalField, ControlType } from '../../../shared/types/automation.types';
 import { logger, automationPageLogger } from '../../core/logger';
+import {
+  computeAccessibleName,
+  detectControlType,
+  detectRole,
+  computeInteractionHints,
+  generateFieldId,
+} from '../utils';
 
 export interface FieldExtractionOptions {
   includeHidden?: boolean;
@@ -28,6 +35,16 @@ interface RawFieldCandidate {
   // Label relationships captured browser-side
   labelFor?: string | null;
   closestLabelText?: string | null;
+  // Enhanced fields for canonical extraction
+  readonly?: boolean;
+  checked?: boolean;
+  disabled?: boolean;
+  visible?: boolean;
+  minLength?: string | null;
+  maxLength?: string | null;
+  sectionHeading?: string | null;
+  formIndex?: number;
+  positionInForm?: number;
 }
 
 export class FieldExtractor {
@@ -185,6 +202,213 @@ export class FieldExtractor {
       automationPageLogger.error(`Field extraction error: ${error}`);
       throw error;
     }
+  }
+
+  /**
+   * Extract canonical fields using semantic schema
+   * Returns CanonicalField[] with accessibleName as primary identifier
+   */
+  async extractCanonicalFields(options: FieldExtractionOptions = {}): Promise<CanonicalField[]> {
+    try {
+      automationPageLogger.info(`Starting canonical field extraction (includeHidden: ${options.includeHidden}, includeDisabled: ${options.includeDisabled})`);
+
+      // 1) Browser-side: extract enhanced RAW candidates with additional metadata
+      const raw = await this.extractEnhancedRawCandidates(options);
+
+      automationPageLogger.info(`Extracted ${raw.length} enhanced raw field candidates from browser`);
+
+      // 2) Node-side: transform to CanonicalField[]
+      const fields = await this.buildCanonicalFields(raw);
+      
+      logger.info(`Extracted ${fields.length} canonical fields (from ${raw.length} candidates)`);
+      automationPageLogger.info(`Final canonical fields: ${fields.length}`);
+      
+      return fields;
+    } catch (error) {
+      logger.error('Canonical field extraction failed:', error);
+      automationPageLogger.error(`Canonical field extraction error: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Extract enhanced raw candidates with additional metadata for canonical schema
+   */
+  private async extractEnhancedRawCandidates(options: FieldExtractionOptions): Promise<RawFieldCandidate[]> {
+    return await this.page.evaluate((opts) => {
+      if (!document.body) {
+        console.warn('[FieldExtractor] document.body is null - page not ready for extraction');
+        return [];
+      }
+      
+      const root = document.body as Element;
+
+      // Get all candidate interactive elements
+      // Include: form inputs, buttons, and ALL links (for navigation actions like "Manage Students", "Manage Applications")
+      const candidates = Array.from(
+        root.querySelectorAll(
+          'input, textarea, select, button, a, [role="radio"], [role="checkbox"], [role="button"]'
+        )
+      ) as HTMLElement[];
+
+      // Visibility check
+      const visible = (el: Element) => {
+        const style = window.getComputedStyle(el);
+        return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+      };
+
+      // Filter by visibility and disabled state
+      const filtered = candidates.filter((el) => {
+        if (!opts.includeHidden && !visible(el)) return false;
+        if (!opts.includeDisabled && el.hasAttribute('disabled')) return false;
+        return true;
+      });
+
+      // Helper to find nearest section heading (h1-h6)
+      const findSectionHeading = (element: HTMLElement): string | null => {
+        let current: Element | null = element;
+        let depth = 0;
+        const maxDepth = 10; // Prevent infinite loops
+        
+        while (current && depth < maxDepth) {
+          // Check previous siblings for headings
+          let sibling = current.previousElementSibling;
+          while (sibling && depth < maxDepth) {
+            const tagName = sibling.tagName.toLowerCase();
+            if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName)) {
+              const text = sibling.textContent?.trim();
+              if (text && text.length > 0 && text.length < 200) {
+                return text;
+              }
+            }
+            sibling = sibling.previousElementSibling;
+            depth++;
+          }
+          
+          // Check parent for headings
+          current = current.parentElement;
+          if (current) {
+            const tagName = current.tagName.toLowerCase();
+            if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName)) {
+              const text = current.textContent?.trim();
+              if (text && text.length > 0 && text.length < 200) {
+                return text;
+              }
+            }
+          }
+          depth++;
+        }
+        
+        return null;
+      };
+
+      // Helper to find form index
+      const findFormIndex = (element: HTMLElement): number => {
+        const form = element.closest('form');
+        if (!form) return 0;
+        
+        const forms = Array.from(document.querySelectorAll('form'));
+        return forms.indexOf(form);
+      };
+
+      // Helper to find position in form
+      const findPositionInForm = (element: HTMLElement, allElements: HTMLElement[]): number => {
+        const form = element.closest('form');
+        if (!form) return allElements.indexOf(element);
+        
+        const formFields = allElements.filter(el => form.contains(el));
+        return formFields.indexOf(element);
+      };
+
+      // Helper to get label text (browser-side)
+      const getLabelTextBrowser = (element: HTMLElement): string | null => {
+        if (element.id) {
+          const label = document.querySelector(`label[for="${element.id}"]`);
+          if (label) {
+            const text = label.textContent?.trim();
+            if (text) return text;
+          }
+        }
+
+        const parentLabel = element.closest('label');
+        if (parentLabel) {
+          const text = parentLabel.textContent?.trim();
+          if (text) return text;
+        }
+
+        let sibling = element.previousElementSibling;
+        while (sibling) {
+          if (sibling.tagName === 'LABEL') {
+            const text = sibling.textContent?.trim();
+            if (text) return text;
+          }
+          sibling = sibling.previousElementSibling;
+        }
+
+        const nextSibling = element.nextElementSibling;
+        if (nextSibling && nextSibling.tagName === 'LABEL') {
+          const text = nextSibling.textContent?.trim();
+          if (text && text.length < 50) return text;
+        }
+
+        const ariaLabelledBy = element.getAttribute('aria-labelledby');
+        if (ariaLabelledBy) {
+          const labelEl = document.getElementById(ariaLabelledBy);
+          if (labelEl) {
+            const text = labelEl.textContent?.trim();
+            if (text) return text;
+          }
+        }
+
+        const selfText = element.textContent?.trim();
+        if (selfText && selfText.length < 120) return selfText;
+
+        return null;
+      };
+
+      const rawFields: RawFieldCandidate[] = filtered.map((el, i) => {
+        const tagName = el.tagName.toLowerCase();
+        const input = el as any;
+        const type = (input.type || el.getAttribute('type') || 'text').toLowerCase();
+        const htmlEl = el as HTMLElement;
+
+        const closestLabelText = getLabelTextBrowser(htmlEl);
+        const sectionHeading = findSectionHeading(htmlEl);
+        const formIndex = findFormIndex(htmlEl);
+        const positionInForm = findPositionInForm(htmlEl, filtered);
+
+        return {
+          domIndex: i,
+          tagName,
+          type,
+          id: htmlEl.id || null,
+          name: input.name || null,
+          placeholder: input.placeholder || null,
+          className: htmlEl.className || null,
+          required: !!input.required,
+          value: input.value ?? null,
+          min: input.min ?? null,
+          max: input.max ?? null,
+          pattern: input.pattern ?? null,
+          ariaLabel: el.getAttribute('aria-label'),
+          ariaLabelledBy: el.getAttribute('aria-labelledby'),
+          role: el.getAttribute('role'),
+          closestLabelText: closestLabelText || null,
+          // Enhanced fields
+          readonly: !!input.readOnly,
+          checked: !!input.checked,
+          disabled: !!input.disabled,
+          visible: visible(el),
+          minLength: input.minLength ? String(input.minLength) : null,
+          maxLength: input.maxLength ? String(input.maxLength) : null,
+          sectionHeading: sectionHeading || null,
+          formIndex,
+          positionInForm,
+        };
+      });
+
+      return opts.maxFields ? rawFields.slice(0, opts.maxFields) : rawFields;
+    }, options);
   }
 
   /**
@@ -701,5 +925,414 @@ export class FieldExtractor {
 
     // For everything else, use uniqueSelector
     return field.uniqueSelector;
+  }
+
+  /**
+   * Build canonical fields from enhanced raw candidates
+   */
+  private async buildCanonicalFields(raw: RawFieldCandidate[]): Promise<CanonicalField[]> {
+    const fields: CanonicalField[] = [];
+    const seenFieldIds = new Set<string>();
+    const radioGroups = new Map<string, RawFieldCandidate[]>();
+    const otpGroups = new Map<string, RawFieldCandidate[]>();
+
+    // First pass: group radios and detect OTP groups
+    for (const candidate of raw) {
+      if (candidate.type === 'radio' && candidate.name) {
+        if (!radioGroups.has(candidate.name)) {
+          radioGroups.set(candidate.name, []);
+        }
+        radioGroups.get(candidate.name)!.push(candidate);
+      } else if (this.isOtpCandidate(candidate)) {
+        const containerKey = await this.getOtpContainerKey(candidate);
+        if (!otpGroups.has(containerKey)) {
+          otpGroups.set(containerKey, []);
+        }
+        otpGroups.get(containerKey)!.push(candidate);
+      }
+    }
+
+    // Second pass: build canonical fields
+    for (let i = 0; i < raw.length; i++) {
+      const candidate = raw[i];
+
+      // Skip if already processed as part of a radio group
+      if (candidate.type === 'radio' && candidate.name) {
+        const group = radioGroups.get(candidate.name);
+        if (!group || group[0] !== candidate) continue;
+
+        const field = await this.buildCanonicalRadioGroupField(candidate, group, i);
+        if (!seenFieldIds.has(field.fieldId)) {
+          seenFieldIds.add(field.fieldId);
+          fields.push(field);
+        }
+        continue;
+      }
+
+      // Skip if already processed as part of OTP group
+      if (this.isOtpCandidate(candidate)) {
+        const containerKey = await this.getOtpContainerKey(candidate);
+        const group = otpGroups.get(containerKey);
+        if (!group || group[0] !== candidate) continue;
+
+        const field = await this.buildCanonicalOtpGroupField(candidate, group, i);
+        if (!seenFieldIds.has(field.fieldId)) {
+          seenFieldIds.add(field.fieldId);
+          fields.push(field);
+        }
+        continue;
+      }
+
+      // Regular field processing
+      const field = await this.buildCanonicalField(candidate, i);
+
+      // Apply significance filter
+      if (!this.shouldIncludeCanonicalField(field)) {
+        continue;
+      }
+
+      if (!seenFieldIds.has(field.fieldId)) {
+        seenFieldIds.add(field.fieldId);
+        fields.push(field);
+      }
+    }
+
+    return fields;
+  }
+
+  /**
+   * Build a single canonical field from raw candidate
+   */
+  private async buildCanonicalField(candidate: RawFieldCandidate, index: number): Promise<CanonicalField> {
+    // Get label text
+    const labelText = await this.getLabelText(candidate);
+
+    // Compute accessible name
+    const accessibleName = computeAccessibleName({
+      labelText,
+      ariaLabel: candidate.ariaLabel,
+      ariaLabelledBy: candidate.ariaLabelledBy,
+      placeholder: candidate.placeholder,
+      id: candidate.id,
+      name: candidate.name,
+    });
+
+    // Detect control type and role
+    const controlType = detectControlType({
+      tag: candidate.tagName,
+      type: candidate.type,
+      className: candidate.className,
+      role: candidate.role,
+    });
+
+    const role = detectRole({
+      tag: candidate.tagName,
+      type: candidate.type,
+      role: candidate.role,
+      className: candidate.className,
+    });
+
+    // Get options for select elements
+    const options = candidate.tagName === 'select'
+      ? await this.getSelectOptions(candidate)
+      : [];
+
+    // Compute interaction hints (convert options format)
+    const interactionHints = computeInteractionHints({
+      controlType,
+      tag: candidate.tagName,
+      className: candidate.className,
+      role: candidate.role,
+      options: options.map(opt => ({ value: opt.value, label: opt.text })),
+    });
+
+    // Generate field ID
+    const fieldId = generateFieldId({
+      accessibleName,
+      controlType,
+      formIndex: candidate.formIndex ?? 0,
+      positionInForm: candidate.positionInForm ?? index,
+    });
+
+    // Generate fallback selector
+    const fallbackSelector = await this.generateUniqueSelector(candidate);
+
+    // Build validation object
+    const validation = {
+      min: candidate.min ? parseFloat(candidate.min) : null,
+      max: candidate.max ? parseFloat(candidate.max) : null,
+      pattern: candidate.pattern || null,
+      minLength: candidate.minLength ? parseInt(candidate.minLength, 10) : null,
+      maxLength: candidate.maxLength ? parseInt(candidate.maxLength, 10) : null,
+    };
+
+    // Build state object
+    const state = {
+      required: candidate.required || false,
+      disabled: candidate.disabled || false,
+      readonly: candidate.readonly || false,
+      visible: candidate.visible ?? true,
+      checked: candidate.checked || false,
+      value: candidate.value || null,
+    };
+
+    // Build labels object
+    const labels = {
+      labelText: labelText || null,
+      ariaLabel: candidate.ariaLabel || null,
+      ariaLabelledBy: candidate.ariaLabelledBy || null,
+      placeholder: candidate.placeholder || null,
+    };
+
+    // Build group object (null for regular fields)
+    const group = null;
+
+    return {
+      fieldId,
+      tag: candidate.tagName as CanonicalField['tag'],
+      controlType,
+      role,
+      accessibleName,
+      labels,
+      group,
+      options: options.map(opt => ({
+        value: opt.value || null,
+        label: opt.text,
+        selected: false, // Would need to check DOM for current selection
+        disabled: false, // Would need to check DOM for disabled state
+      })),
+      state,
+      validation,
+      context: {
+        formIndex: candidate.formIndex ?? 0,
+        sectionHeading: candidate.sectionHeading || null,
+        positionInForm: candidate.positionInForm ?? index,
+      },
+      interactionHints,
+      fallback: {
+        selector: fallbackSelector || null,
+      },
+    };
+  }
+
+  /**
+   * Build canonical field for radio group
+   */
+  private async buildCanonicalRadioGroupField(
+    candidate: RawFieldCandidate,
+    group: RawFieldCandidate[],
+    index: number
+  ): Promise<CanonicalField> {
+    const labelText = await this.getLabelText(candidate);
+    const accessibleName = computeAccessibleName({
+      labelText,
+      ariaLabel: candidate.ariaLabel,
+      ariaLabelledBy: candidate.ariaLabelledBy,
+      placeholder: candidate.placeholder,
+      id: candidate.id,
+      name: candidate.name,
+    });
+
+    const controlType = detectControlType({
+      tag: candidate.tagName,
+      type: candidate.type,
+      className: candidate.className,
+      role: candidate.role,
+    });
+
+    const role = detectRole({
+      tag: candidate.tagName,
+      type: candidate.type,
+      role: candidate.role,
+      className: candidate.className,
+    });
+
+    // Get all radio options
+    const radioOptions = await Promise.all(
+      group.map(async (r) => {
+        const label = await this.getLabelText(r);
+        return {
+          value: r.value || '',
+          label: label || r.value || '',
+        };
+      })
+    );
+
+    const interactionHints = computeInteractionHints({
+      controlType,
+      tag: candidate.tagName,
+      className: candidate.className,
+      role: candidate.role,
+      options: radioOptions,
+    });
+
+    const fieldId = generateFieldId({
+      accessibleName,
+      controlType,
+      formIndex: candidate.formIndex ?? 0,
+      positionInForm: candidate.positionInForm ?? index,
+    });
+
+    const fallbackSelector = await this.generateUniqueSelector(candidate);
+
+    return {
+      fieldId,
+      tag: candidate.tagName as CanonicalField['tag'],
+      controlType,
+      role,
+      accessibleName,
+      labels: {
+        labelText: labelText || null,
+        ariaLabel: candidate.ariaLabel || null,
+        ariaLabelledBy: candidate.ariaLabelledBy || null,
+        placeholder: candidate.placeholder || null,
+      },
+      group: {
+        groupName: candidate.name || null,
+        groupLabel: labelText || null,
+      },
+      options: radioOptions.map(opt => ({
+        value: opt.value || null,
+        label: opt.label,
+        selected: false,
+        disabled: false,
+      })),
+      state: {
+        required: candidate.required || false,
+        disabled: candidate.disabled || false,
+        readonly: candidate.readonly || false,
+        visible: candidate.visible ?? true,
+        checked: candidate.checked || false,
+        value: candidate.value || null,
+      },
+      validation: {
+        min: null,
+        max: null,
+        pattern: null,
+        minLength: null,
+        maxLength: null,
+      },
+      context: {
+        formIndex: candidate.formIndex ?? 0,
+        sectionHeading: candidate.sectionHeading || null,
+        positionInForm: candidate.positionInForm ?? index,
+      },
+      interactionHints,
+      fallback: {
+        selector: fallbackSelector || null,
+      },
+    };
+  }
+
+  /**
+   * Build canonical field for OTP group
+   */
+  private async buildCanonicalOtpGroupField(
+    candidate: RawFieldCandidate,
+    group: RawFieldCandidate[],
+    index: number
+  ): Promise<CanonicalField> {
+    const labelText = await this.getLabelText(candidate);
+    const accessibleName = computeAccessibleName({
+      labelText,
+      ariaLabel: candidate.ariaLabel,
+      ariaLabelledBy: candidate.ariaLabelledBy,
+      placeholder: candidate.placeholder,
+      id: candidate.id,
+      name: candidate.name,
+    });
+
+    const controlType: ControlType = 'text'; // OTP is treated as text input
+    const role = detectRole({
+      tag: candidate.tagName,
+      type: candidate.type,
+      role: candidate.role,
+      className: candidate.className,
+    });
+
+    const interactionHints = computeInteractionHints({
+      controlType,
+      tag: candidate.tagName,
+      className: candidate.className,
+      role: candidate.role,
+    });
+
+    const fieldId = generateFieldId({
+      accessibleName,
+      controlType,
+      formIndex: candidate.formIndex ?? 0,
+      positionInForm: candidate.positionInForm ?? index,
+    });
+
+    const fallbackSelector = await this.generateOtpGroupSelector(candidate, group);
+
+    return {
+      fieldId,
+      tag: candidate.tagName as CanonicalField['tag'],
+      controlType,
+      role,
+      accessibleName,
+      labels: {
+        labelText: labelText || null,
+        ariaLabel: candidate.ariaLabel || null,
+        ariaLabelledBy: candidate.ariaLabelledBy || null,
+        placeholder: candidate.placeholder || null,
+      },
+      group: null,
+      options: [],
+      state: {
+        required: candidate.required || false,
+        disabled: candidate.disabled || false,
+        readonly: candidate.readonly || false,
+        visible: candidate.visible ?? true,
+        checked: false,
+        value: candidate.value || null,
+      },
+      validation: {
+        min: null,
+        max: null,
+        pattern: null,
+        minLength: candidate.minLength ? parseInt(candidate.minLength, 10) : null,
+        maxLength: candidate.maxLength ? parseInt(candidate.maxLength, 10) : null,
+      },
+      context: {
+        formIndex: candidate.formIndex ?? 0,
+        sectionHeading: candidate.sectionHeading || null,
+        positionInForm: candidate.positionInForm ?? index,
+      },
+      interactionHints,
+      fallback: {
+        selector: fallbackSelector || null,
+      },
+    };
+  }
+
+  /**
+   * Check if canonical field should be included
+   */
+  private shouldIncludeCanonicalField(field: CanonicalField): boolean {
+    // Ignore color pickers
+    if (field.controlType === 'color') {
+      return false;
+    }
+
+    const hasPlaceholder = !!field.labels.placeholder && field.labels.placeholder.trim().length > 0;
+    const hasLabelText = !!field.labels.labelText && field.labels.labelText.trim().length > 0;
+    const hasAriaLabel = !!field.labels.ariaLabel && field.labels.ariaLabel.trim().length > 0;
+    const hasAccessibleName = !!field.accessibleName && field.accessibleName.trim().length > 0;
+
+    // For links and buttons: include if they have accessible name (text content)
+    // This ensures navigation links like "Manage Students", "Manage Applications" are included
+    if ((field.tag === 'a' || field.tag === 'button') && hasAccessibleName) {
+      return true;
+    }
+
+    // If field is not required AND has no placeholder, no label, and no aria-label,
+    // treat it as insignificant
+    if (!field.state.required && !hasPlaceholder && !hasLabelText && !hasAriaLabel) {
+      return false;
+    }
+
+    return true;
   }
 }

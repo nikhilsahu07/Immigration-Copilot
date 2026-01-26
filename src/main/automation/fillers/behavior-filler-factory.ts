@@ -25,7 +25,7 @@ export class BehaviorFillerFactory {
   /**
    * Get appropriate filler for a given field behavior
    */
-  static getFiller(behavior: FieldBehavior, page: Page, fieldName?: string, selector?: string): BaseFiller {
+  static getFiller(behavior: FieldBehavior, page: Page, fieldName?: string): BaseFiller {
     let filler: BaseFiller;
     let fillerName: string;
     let mappingReason: string;
@@ -159,7 +159,6 @@ export class BehaviorFillerFactory {
     // Log the mapping decision
     automationMappingLogger.info('Field behavior mapped to filler', {
       fieldName: fieldName || 'unknown',
-      selector: selector || 'unknown',
       behavior,
       fillerName,
       mappingReason,

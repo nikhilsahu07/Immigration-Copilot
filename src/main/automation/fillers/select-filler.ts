@@ -4,21 +4,30 @@ import { BaseFiller, AutomatedField, FillResult, FillStrategy, UILibrary, Verifi
 
 export class SelectFiller extends BaseFiller {
   /**
-   * Strategy 1: Native Playwright selectOption (multi-attempt)
+   * Strategy 1: Native Playwright selectOption (using semantic locator)
    */
   protected async tryNativeFill(field: AutomatedField): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.NATIVE,
+        error: 'No locator available',
+      };
+    }
+
     const value = String(field.value);
     
     try {
-      await this.scrollToElement(field.selector);
+      await this.scrollToLocator(locator);
       
       // Try by value first
       try {
-        await this.page.selectOption(field.selector, { value }, { timeout: 2000 });
+        await locator.selectOption({ value }, { timeout: 2000 });
         return {
           success: true,
           strategy: FillStrategy.NATIVE,
-          uiLibrary: await this.detectLibrary(field.selector),
+          uiLibrary: await this.detectLibrary(locator),
         };
       } catch {
         // Value didn't work
@@ -26,11 +35,11 @@ export class SelectFiller extends BaseFiller {
 
       // Try by label (visible text)
       try {
-        await this.page.selectOption(field.selector, { label: value }, { timeout: 2000 });
+        await locator.selectOption({ label: value }, { timeout: 2000 });
         return {
           success: true,
           strategy: FillStrategy.NATIVE,
-          uiLibrary: await this.detectLibrary(field.selector),
+          uiLibrary: await this.detectLibrary(locator),
         };
       } catch {
         // Label didn't work
@@ -40,28 +49,37 @@ export class SelectFiller extends BaseFiller {
         success: false,
         strategy: FillStrategy.NATIVE,
         error: 'Neither value nor label match worked',
-        domSnapshot: await this.captureDOMSnapshot(field.selector),
+        domSnapshot: await this.captureDOMSnapshot(locator),
       };
     } catch (error) {
       return {
         success: false,
         strategy: FillStrategy.NATIVE,
         error: String(error),
-        domSnapshot: await this.captureDOMSnapshot(field.selector),
+        domSnapshot: await this.captureDOMSnapshot(locator),
       };
     }
   }
 
   /**
-   * Strategy 2: Direct DOM manipulation with partial matching
+   * Strategy 2: Direct DOM manipulation with partial matching (using semantic locator)
    */
   protected async tryDomFill(field: AutomatedField): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.DOM,
+        error: 'No locator available',
+      };
+    }
+
     try {
       const value = String(field.value);
       
-      const success = await this.page.evaluate(({ selector, searchValue }) => {
-        const el = document.querySelector(selector) as HTMLSelectElement;
-        if (!el) return false;
+      const success = await locator.evaluate((el: Element, searchValue: string) => {
+        const selectEl = el as HTMLSelectElement;
+        if (!selectEl) return false;
         
         // Find option that contains the value (case-insensitive)
         const searchLower = searchValue.toLowerCase();
@@ -91,7 +109,7 @@ export class SelectFiller extends BaseFiller {
         }
         
         return false;
-      }, { selector: field.selector, searchValue: value });
+      }, value);
       
       return {
         success,
@@ -108,24 +126,33 @@ export class SelectFiller extends BaseFiller {
   }
 
   /**
-   * Strategy 3: UI Library-specific handlers
+   * Strategy 3: UI Library-specific handlers (using semantic locator)
    */
   protected async tryUILibraryFill(field: AutomatedField): Promise<FillResult> {
-    const library = await this.detectLibrary(field.selector);
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.UI_LIBRARY,
+        error: 'No locator available',
+      };
+    }
+
+    const library = await this.detectLibrary(locator);
     const value = String(field.value);
     
     try {
       switch (library) {
         case UILibrary.MATERIAL_UI:
           // MUI Select: click to open, find option, click
-          await this.page.click(field.selector);
+          await locator.click();
           await this.page.waitForSelector('[role="listbox"]', { timeout: 2000 });
           await this.page.click(`[role="option"]:has-text("${value}")`);
           break;
           
         case UILibrary.BOOTSTRAP: {
           // Bootstrap-select: click trigger, find option in menu
-          await this.page.click(`${field.selector} + .dropdown-toggle`);
+          await locator.click();
           await this.page.waitForSelector('.dropdown-menu', { state: 'visible', timeout: 2000 });
           await this.page.click(`.dropdown-menu >> text="${value}"`);
           break;
@@ -133,9 +160,9 @@ export class SelectFiller extends BaseFiller {
           
         case UILibrary.SELECT2: {
           // Select2: use jQuery API if available
-          const select2Success = await this.page.evaluate(({ sel, val }) => {
+          const select2Success = await locator.evaluate((el: Element, val: string) => {
             try {
-              const $el = (window as any).$(sel);
+              const $el = (window as any).$(el);
               if ($el && $el.select2) {
                 $el.val(val).trigger('change');
                 return true;
@@ -144,7 +171,7 @@ export class SelectFiller extends BaseFiller {
               return false;
             }
             return false;
-          }, { sel: field.selector, val: value });
+          }, value);
           
           if (!select2Success) {
             return {
@@ -159,18 +186,18 @@ export class SelectFiller extends BaseFiller {
           
         case UILibrary.TOM_SELECT: {
           // Tom Select: use instance API
-          const tomSuccess = await this.page.evaluate(({ sel, val }) => {
+          const tomSuccess = await locator.evaluate((el: Element, val: string) => {
             try {
-              const el = document.querySelector(sel) as any;
-              if (el && el.tomselect) {
-                el.tomselect.setValue(val);
+              const selectEl = el as any;
+              if (selectEl && selectEl.tomselect) {
+                selectEl.tomselect.setValue(val);
                 return true;
               }
             } catch {
               return false;
             }
             return false;
-          }, { sel: field.selector, val: value });
+          }, value);
           
           if (!tomSuccess) {
             return {
@@ -209,9 +236,18 @@ export class SelectFiller extends BaseFiller {
   }
 
   /**
-   * Strategy 4: Keyboard-based filling (arrows + enter)
+   * Strategy 4: Keyboard-based filling (arrows + enter, using semantic locator)
    */
   protected async tryKeyboardFill(field: AutomatedField, retryCount: number): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.KEYBOARD,
+        error: 'No locator available',
+      };
+    }
+
     try {
       const value = String(field.value);
       
@@ -222,7 +258,7 @@ export class SelectFiller extends BaseFiller {
       }
       
       // Focus the select
-      await this.page.click(field.selector);
+      await locator.click();
       await this.page.waitForTimeout(100);
       
       // Open dropdown with arrow down
@@ -250,15 +286,25 @@ export class SelectFiller extends BaseFiller {
   }
 
   /**
-   * Verification: Check selected option
+   * Verification: Check selected option (using semantic locator)
    */
   protected async verifyFill(field: AutomatedField): Promise<VerificationResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        passed: false,
+        actual: undefined,
+        expected: String(field.value),
+        reason: 'No locator available for verification',
+      };
+    }
+
     try {
-      const actual = await this.page.evaluate((sel) => {
-        const el = document.querySelector(sel) as HTMLSelectElement;
-        if (!el) return null;
-        return el.options[el.selectedIndex]?.text || el.value;
-      }, field.selector);
+      const actual = await locator.evaluate((el: Element) => {
+        const selectEl = el as HTMLSelectElement;
+        if (!selectEl) return null;
+        return selectEl.options[selectEl.selectedIndex]?.text || selectEl.value;
+      });
       
       const expected = String(field.value);
       

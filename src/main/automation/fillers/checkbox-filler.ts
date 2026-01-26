@@ -3,31 +3,40 @@ import { BaseFiller, AutomatedField, FillResult, FillStrategy, UILibrary, Verifi
 
 export class CheckboxFiller extends BaseFiller {
   /**
-   * Strategy 1: Native Playwright check/uncheck
+   * Strategy 1: Native Playwright check/uncheck (using semantic locator)
    */
   protected async tryNativeFill(field: AutomatedField): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.NATIVE,
+        error: 'No locator available',
+      };
+    }
+
     try {
-      await this.scrollToElement(field.selector);
+      await this.scrollToLocator(locator);
       
       const shouldCheck = field.value === true || field.value === 'true' || field.value === 'yes';
       
       if (shouldCheck) {
-        await this.page.check(field.selector, { timeout: 3000 });
+        await locator.check({ timeout: 3000 });
       } else {
-        await this.page.uncheck(field.selector, { timeout: 3000 });
+        await locator.uncheck({ timeout: 3000 });
       }
       
       return {
         success: true,
         strategy: FillStrategy.NATIVE,
-        uiLibrary: await this.detectLibrary(field.selector),
+        uiLibrary: await this.detectLibrary(locator),
       };
     } catch (error) {
       return {
         success: false,
         strategy: FillStrategy.NATIVE,
         error: String(error),
-        domSnapshot: await this.captureDOMSnapshot(field.selector),
+        domSnapshot: await this.captureDOMSnapshot(locator),
       };
     }
   }
@@ -68,18 +77,27 @@ export class CheckboxFiller extends BaseFiller {
   }
 
   /**
-   * Strategy 3: UI Library-specific handling
+   * Strategy 3: UI Library-specific handling (using semantic locator)
    */
   protected async tryUILibraryFill(field: AutomatedField): Promise<FillResult> {
-    const library = await this.detectLibrary(field.selector);
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.UI_LIBRARY,
+        error: 'No locator available',
+      };
+    }
+
+    const library = await this.detectLibrary(locator);
     const shouldCheck = field.value === true || field.value === 'true' || field.value === 'yes';
     
     try {
       switch (library) {
         case UILibrary.BOOTSTRAP: {
           // Bootstrap custom checkbox: click the label
-          const clicked = await this.page.evaluate((selector) => {
-            const checkbox = document.querySelector(selector) as HTMLInputElement;
+          const clicked = await locator.evaluate((el: Element) => {
+            const checkbox = el as HTMLInputElement;
             if (!checkbox) return false;
             
             const label = checkbox.closest('label') || checkbox.parentElement?.querySelector('label');
@@ -87,9 +105,8 @@ export class CheckboxFiller extends BaseFiller {
               (label as HTMLElement).click();
               return true;
             }
-            
             return false;
-          }, field.selector);
+          });
           
           if (!clicked) {
             return {
@@ -105,9 +122,9 @@ export class CheckboxFiller extends BaseFiller {
         case UILibrary.MATERIAL_UI:
           // MUI checkbox: click the checkbox wrapper
           if (shouldCheck) {
-            await this.page.check(field.selector, { timeout: 2000 });
+            await locator.check({ timeout: 2000 });
           } else {
-            await this.page.uncheck(field.selector, { timeout: 2000 });
+            await locator.uncheck({ timeout: 2000 });
           }
           break;
           
@@ -136,9 +153,18 @@ export class CheckboxFiller extends BaseFiller {
   }
 
   /**
-   * Strategy 4: Keyboard-based (click + Space to toggle)
+   * Strategy 4: Keyboard-based (click + Space to toggle, using semantic locator)
    */
   protected async tryKeyboardFill(field: AutomatedField, retryCount: number): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.KEYBOARD,
+        error: 'No locator available',
+      };
+    }
+
     try {
       if (retryCount > 0) {
         await this.page.keyboard.press('Escape');
@@ -146,7 +172,7 @@ export class CheckboxFiller extends BaseFiller {
       }
       
       // Click to focus, Space to toggle
-      await this.page.click(field.selector);
+      await locator.click();
       await this.page.waitForTimeout(100);
       await this.page.keyboard.press('Space');
       
@@ -164,11 +190,21 @@ export class CheckboxFiller extends BaseFiller {
   }
 
   /**
-   * Verification: Check if checkbox state matches expected
+   * Verification: Check if checkbox state matches expected (using semantic locator)
    */
   protected async verifyFill(field: AutomatedField): Promise<VerificationResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        passed: false,
+        actual: undefined,
+        expected: String(field.value),
+        reason: 'No locator available for verification',
+      };
+    }
+
     try {
-      const isChecked = await this.page.isChecked(field.selector);
+      const isChecked = await locator.isChecked();
       const expectedChecked = field.value === true || field.value === 'true' || field.value === 'yes';
       
       const passed = isChecked === expectedChecked;

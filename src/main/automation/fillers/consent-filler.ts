@@ -9,11 +9,16 @@ import { AutomatedField, VerificationResult } from './base-filler';
  */
 export class ConsentFiller extends CheckboxFiller {
   /**
-   * Override fill to add scroll-into-view and visibility check
+   * Override fill to add scroll-into-view and visibility check (using semantic locator)
    */
   async fill(field: AutomatedField): Promise<boolean> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return false;
+    }
+
     // Ensure consent checkbox is fully visible
-    await this.scrollToElement(field.selector);
+    await this.scrollToLocator(locator);
     await this.page.waitForTimeout(200);  // Let scroll complete
     
     // Use parent checkbox fill logic
@@ -21,7 +26,7 @@ export class ConsentFiller extends CheckboxFiller {
   }
 
   /**
-   * Enhanced verification - check "I agree" text is nearby
+   * Enhanced verification - check "I agree" text is nearby (using semantic locator)
    */
   protected async verifyFill(field: AutomatedField): Promise<VerificationResult> {
     // First do standard checkbox verification
@@ -32,11 +37,13 @@ export class ConsentFiller extends CheckboxFiller {
     }
     
     // Additionally verify consent-related text is present
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return baseVerification;
+    }
+
     try {
-      const hasConsentText = await this.page.evaluate((selector) => {
-        const el = document.querySelector(selector);
-        if (!el) return false;
-        
+      const hasConsentText = await locator.evaluate((el: Element) => {
         // Check parent text for consent keywords
         const parent = el.closest('label') || el.parentElement;
         const text = parent?.textContent?.toLowerCase() || '';
@@ -45,7 +52,7 @@ export class ConsentFiller extends CheckboxFiller {
                text.includes('accept') ||
                text.includes('terms') ||
                text.includes('consent');
-      }, field.selector);
+      });
       
       if (!hasConsentText) {
         return {

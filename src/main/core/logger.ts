@@ -103,9 +103,9 @@ export const automationBatchLogger = createPlainFileLogger('automation_batch.log
 export const fieldFillLogger = createPlainFileLogger('field_fill.log');
 
 // Raw HTML context log (cleaned HTML sent as optional context)
-export const rawHtmlContextLogger = createPlainFileLogger('raw_html_context.log');
+export const rawHtmlContextLogger = createPlainFileLogger('raw_html_structure.log');
 
-// Structured HTML fields log (clean JSON HtmlField[] structure)
+// Structured HTML fields log (clean JSON  canonicalFields[] structure)
 export const htmlFieldsStructureLogger = createPlainFileLogger('html_fields_structure.log');
 
 // Create gemini prompt logger

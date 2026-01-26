@@ -1,10 +1,12 @@
 
-import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
+import { GoogleGenerativeAI, GenerativeModel, Part } from '@google/generative-ai';
 import { getAIConfig } from '../config/ai.config';
 import { logger, geminiPromptLogger, geminiResponseLogger, htmlFieldsStructureLogger } from '../core/logger';
 
 import { BehaviorFormMapping } from '../../shared/types';
-import { HtmlField } from '../../shared/types/automation.types';
+import { CanonicalField } from '../../shared/types/automation.types';
+import { filterFormFields } from '../automation/utils/canonical-field-logger';
+import { parseGeminiResponse } from './gemini-response-schema';
 
 export type AIAnalysisResult = BehaviorFormMapping;
 
@@ -12,26 +14,30 @@ export class AIService {
   private getModel(apiKey: string, modelName: string): GenerativeModel {
     const config = getAIConfig(apiKey, modelName);
     const genAI = new GoogleGenerativeAI(config.apiKey);
-    return genAI.getGenerativeModel({ 
+    
+    // Use JSON mode if available (Gemini 1.5+ supports responseMimeType)
+    const modelConfig: any = {
       model: config.model,
       generationConfig: {
         temperature: config.temperature,
         topP: config.topP,
         maxOutputTokens: config.maxOutputTokens,
+        // Enable JSON mode for structured output
+        responseMimeType: 'application/json',
       },
-    });
+    };
+    
+    return genAI.getGenerativeModel(modelConfig);
   }
 
   async analyzePageAndMapFields(
-    htmlFields: HtmlField[], 
-    // 
+    canonicalFields: CanonicalField[], 
     extractedData: any,
     documentList: { name: string; category: string }[],
     apiKey: string,
     modelName: string,
     customPrompt?: string,
     screenshotBase64?: string,
-    htmlContext?: string
   ): Promise<AIAnalysisResult> {
     try {
       // Build document list string
@@ -47,7 +53,7 @@ export class AIService {
           CRITICAL CONTRACT REQUIREMENTS:
           ===============================================================================
           
-          1. OUTPUT FORMAT: Return ONLY a single valid JSON object. NO explanations, NO markdown except code fences, NO multiple candidates.
+          1. OUTPUT FORMAT: Return ONLY a single valid JSON object. NO explanations, NO markdown, NO code fences, NO backticks, NO multiple candidates. Start with { and end with }.
           2. ACTIONS CONTRACT: The "actions" array MUST contain EXACTLY ONE primary action per page (no more, no less).
           3. MISSING DATA: Use "expectedValue": "__MISSING__" and "status": "missing_data" for unknown values. NEVER invent fake data.
           4. DASHBOARD PAGES: Must have "fields": [] (empty array) and exactly one action.
@@ -74,10 +80,15 @@ export class AIService {
 
           ${screenshotBase64 ? `CRITICAL INSTRUCTION: An image of the webpage is attached.\n1. Use the IMAGE to understand the visual layout, context, and which form corresponds to the user's intent. Use the HTML fields provided below strictly for extracting correct CSS selectors.\n2. If there is a visual conflict between HTML and Image, prioritize the Image for "Context" but the HTML/fields for "Selectors".` : ''}
 
-          FORM FIELDS STRUCTURE (JSON):
-          ${JSON.stringify(htmlFields, null, 2)}
-
-          ${htmlContext ? `\nHTML CONTEXT (for reference only, use field structure above):\n${htmlContext.substring(0, 5000)}\n` : ''}
+          FORM FIELDS STRUCTURE (Canonical Schema - Pre-processed HTML):
+          ${JSON.stringify(filterFormFields(canonicalFields), null, 2)}
+          
+          NOTE: This structure uses semantic identifiers:
+          - "fieldId" is the PRIMARY identifier you MUST use in your response
+          - "accessibleName" is the semantic name (for reference)
+          - "controlType" indicates the field type (text, email, select, etc.)
+          - "interactionHints.inputMode" shows how to interact (type, click, select, etc.)
+          - "fallback.selector" is provided for reference only - DO NOT use in response
 
           FIELD BEHAVIOR TYPES (CRITICAL - choose the most specific):
           - "text_entry" = simple text input
@@ -104,8 +115,11 @@ export class AIService {
           - Be explicit about what you don't know
 
           ===============================================================================
-          OUTPUT CONTRACT (MANDATORY):
+          OUTPUT CONTRACT (MANDATORY - STRICT JSON):
           ===============================================================================
+          
+          CRITICAL: You MUST return ONLY a valid, complete JSON object. NO markdown, NO code fences, NO backticks, NO explanations.
+          Start your response with { and end with }. Ensure all strings are properly escaped and closed.
           
           You MUST return a valid JSON object with this EXACT structure:
           {
@@ -114,8 +128,8 @@ export class AIService {
             "isFormPage": boolean,
             "fields": [
               {
-                "selector": "USE uniqueSelector from field structure above",
-                "fieldName": "Human-readable field name (use labelText if available)",
+                "fieldId": "REQUIRED - Use the fieldId from the canonical field structure above",
+                "fieldName": "Human-readable field name (use accessibleName from canonical schema)",
                 "behavior": "text_entry|masked_input|search_and_select|single_choice_dropdown|single_choice_radio|single_choice|date_picker|boolean_toggle|consent_checkbox|otp_group|range_slider|file_upload",
                 "intent": "semantic_name (e.g. citizenship_country, passport_number)",
                 "expectedValue": "value from client data OR '__MISSING__'",
@@ -130,7 +144,7 @@ export class AIService {
                 "intent": "primary_navigation|secondary_action|modal_confirm|create_new",
                 "description": "What this accomplishes",
                 "expectedText": "Visible button text (for matching)",
-                "selector": "SIMPLE CSS selector (preferred) or leave empty to use text matching",
+                "fieldId": "OPTIONAL - Use fieldId if the action button is in the canonical fields structure",
                 "confidence": "high|medium|low"
               }
             ],
@@ -139,7 +153,7 @@ export class AIService {
           }
 
           FIELD PREFERENCE RULE (when multiple fields are semantically similar):
-          - Prefer the field with: 1) explicit labelText (non-empty), 2) required=true, 3) earlier DOM order (index ascending)
+          - Prefer the field with: 1) explicit accessibleName (non-empty), 2) required=true (state.required), 3) earlier positionInForm (context.positionInForm ascending)
 
           ===============================================================================
           CRITICAL RULES (CONTRACT ENFORCEMENT):
@@ -174,42 +188,60 @@ export class AIService {
           
           6. CONFIDENCE IS KEY: low confidence → require review (status="low_confidence")
           
-          7. SELECTORS: Use the "uniqueSelector" from the field structure - DO NOT modify it
+          7. FIELD IDENTIFIER (CRITICAL): You MUST return "fieldId" from the canonical field structure. DO NOT return selectors. Our system will use semantic discovery (getByRole, getByLabel, etc.) to find fields. The fieldId is the primary identifier that links your response to the canonical field structure.
           
           8. BEHAVIOR OVER TYPE: Use "search_and_select" only when it's truly searchable/autocomplete
           
           9. Terms checkboxes: behavior="consent_checkbox", confidence="high"
           
-          10. OTP fields: behavior="otp_group", selector should match ALL OTP inputs
+          10. OTP fields: behavior="otp_group", use the fieldId for the OTP group field
           
-          11. OUTPUT FORMAT (CRITICAL):
-              - Return ONLY raw JSON object
-              - NO explanatory text before or after
-              - NO markdown formatting except JSON code fences (which will be stripped)
+          11. OUTPUT FORMAT (CRITICAL - STRICT JSON ONLY):
+              - Return ONLY a valid JSON object - NO markdown, NO code fences, NO backticks
+              - Start your response with { and end with }
+              - NO explanatory text before or after the JSON
+              - NO markdown code block markers (no triple backticks)
+              - NO text outside the JSON object
+              - The JSON MUST be complete and valid - ensure all strings are properly closed, all arrays/objects are properly closed
               - Contract violation = parsing failure
           
           ===============================================================================
           `;
 
 
-      // Log structured fields separately for debugging/analysis (exact JSON, not part of prompt)
+      // Log canonical fields - EXACT fields structure JSON after cleaning and extraction
       try {
         htmlFieldsStructureLogger.info(
-          `${JSON.stringify(htmlFields, null, 2)}`
+          `--- CANONICAL FIELDS (EXACT STRUCTURE AFTER CLEANING AND EXTRACTION) ---\n` +
+          `TIMESTAMP: ${new Date().toISOString()}\n` +
+          `Total Fields: ${canonicalFields.length}\n\n` +
+          `${JSON.stringify(canonicalFields, null, 2)}\n\n` +
+          `--- END CANONICAL FIELDS ---\n`
         );
       } catch {
         // Never break on logging failures
       }
 
-      // Log EXACT prompt text we send to Gemini (plus timestamp wrapper)
-      geminiPromptLogger.info(
-        `TIMESTAMP: ${new Date().toISOString()}\n` +
-        '--- PROMPT SENT TO GEMINI ---\n' +
-        `${prompt}\n`
-      );
+      // Log EXACT prompt text sent to Gemini - no truncation, no filtering
+      try {
+        geminiPromptLogger.info(
+          `--- EXACT PROMPT SENT TO GEMINI ---\n` +
+          `TIMESTAMP: ${new Date().toISOString()}\n\n` +
+          `${prompt}\n\n` +
+          `--- END PROMPT ---\n`
+        );
+      } catch {
+        // Fallback to simple logging
+        geminiPromptLogger.info(
+          `--- EXACT PROMPT SENT TO GEMINI ---\n` +
+          `TIMESTAMP: ${new Date().toISOString()}\n\n` +
+          `${prompt}\n\n` +
+          `--- END PROMPT ---\n`
+        );
+      }
 
       // Prepare request parts
-      const parts: unknown[] = [{ text: prompt }];
+      const parts: Part[] = [{ text: prompt }];
       if (screenshotBase64) {
         parts.push({
           inlineData: {
@@ -223,14 +255,16 @@ export class AIService {
       const result = await model.generateContent(parts);
       const response = result.response;
       const usage = response.usageMetadata;
-      const text = response.text();
+      const text = response.text(); // EXACT raw response from Gemini
       
-      // Clean markdown code blocks if present
-      const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      // Log EXACT response from Gemini - no cleaning, no truncation
+      this.logResponse(text, usage, !!screenshotBase64);
       
-      this.logResponse(cleanJson, usage, !!screenshotBase64);
+      // Extract and parse JSON with robust Zod-based validation
+      // This replaces the fragile brace-counting and manual repair logic
+      const parsedJson = parseGeminiResponse(text) as AIAnalysisResult;
 
-      return JSON.parse(cleanJson) as AIAnalysisResult;
+      return parsedJson;
 
     } catch (error) {
       logger.error('AI Analysis failed:', error);
@@ -250,7 +284,11 @@ export class AIService {
       usageStr = `\nImage Attached: ${imageAttached ? 'Yes' : 'No'}\nPrompt Tokens: ${usage.promptTokenCount}\nResponse Tokens: ${usage.candidatesTokenCount}\nTotal Tokens: ${usage.totalTokenCount}`;
     }
 
-    const entry = `\n[${timestamp}]${usageStr}\n${response}\n-----------------------------------\n`;
+    // Log EXACT response from Gemini - no truncation, no filtering
+    const entry = `--- EXACT RESPONSE FROM GEMINI ---\n` +
+      `TIMESTAMP: ${timestamp}${usageStr}\n\n` +
+      `${response}\n\n` +
+      `--- END RESPONSE ---\n`;
     geminiResponseLogger.info(entry);
   }
 }

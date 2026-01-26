@@ -9,7 +9,13 @@ import { getPresignedUrl } from '../../storage/s3-client';
 export class FileUploadFiller extends BaseFiller {
   async fill(field: AutomatedField): Promise<boolean> {
     try {
-      await this.scrollToElement(field.selector);
+      const locator = this.getLocator(field);
+      if (!locator) {
+        logger.error(`No locator available for file upload ${field.fieldLabel}`);
+        return false;
+      }
+
+      await this.scrollToLocator(locator);
 
       // Value should be the S3 Key or URL
       const fileKeyOrUrl = String(field.value);
@@ -51,10 +57,10 @@ export class FileUploadFiller extends BaseFiller {
       const arrayBuffer = await response.arrayBuffer();
       fs.writeFileSync(localPath, Buffer.from(arrayBuffer));
 
-      // 2. Upload to input
-      await this.page.setInputFiles(field.selector, localPath);
+      // 2. Upload to input (using semantic locator)
+      await locator.setInputFiles(localPath);
 
-      logger.info(`Uploaded file ${fileName} to ${field.selector}`);
+      logger.info(`Uploaded file ${fileName} to ${field.fieldLabel}`);
       
       // Cleanup? Maybe keep for a bit or let OS handle temp
       // fs.unlinkSync(localPath); 

@@ -3,39 +3,54 @@ import { BaseFiller, AutomatedField, FillResult, FillStrategy, UILibrary, Verifi
 
 export class TextFiller extends BaseFiller {
   /**
-   * Strategy 1: Native Playwright fill
+   * Strategy 1: Native Playwright fill (using semantic locator)
    */
   protected async tryNativeFill(field: AutomatedField): Promise<FillResult> {
     try {
-      await this.scrollToElement(field.selector);
-      await this.page.fill(field.selector, String(field.value), { timeout: 3000 });
+      const locator = this.getLocator(field);
+      if (!locator) {
+        return {
+          success: false,
+          strategy: FillStrategy.NATIVE,
+          error: 'No locator available',
+        };
+      }
+
+      await this.scrollToLocator(locator);
+      await locator.fill(String(field.value), { timeout: 3000 });
       
       return {
         success: true,
         strategy: FillStrategy.NATIVE,
-        uiLibrary: await this.detectLibrary(field.selector),
+        uiLibrary: await this.detectLibrary(locator),
       };
     } catch (error) {
       return {
         success: false,
         strategy: FillStrategy.NATIVE,
         error: String(error),
-        domSnapshot: await this.captureDOMSnapshot(field.selector),
+        domSnapshot: await this.captureDOMSnapshot(this.getLocator(field)),
       };
     }
   }
 
   /**
-   * Strategy 2: Direct DOM manipulation
+   * Strategy 2: Direct DOM manipulation (using semantic locator)
    */
   protected async tryDomFill(field: AutomatedField): Promise<FillResult> {
     try {
+      const locator = this.getLocator(field);
+      if (!locator) {
+        return {
+          success: false,
+          strategy: FillStrategy.DOM,
+          error: 'No locator available',
+        };
+      }
+
       const value = String(field.value);
       
-      const success = await this.page.evaluate(({ selector, val }) => {
-        const el = document.querySelector(selector);
-        if (!el) return false;
-        
+      const success = await locator.evaluate((el: Element, val: string) => {
         if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
           el.value = val;
           el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -43,9 +58,8 @@ export class TextFiller extends BaseFiller {
           el.dispatchEvent(new Event('blur', { bubbles: true }));
           return true;
         }
-        
         return false;
-      }, { selector: field.selector, val: value });
+      }, value);
       
       return {
         success,
@@ -62,10 +76,19 @@ export class TextFiller extends BaseFiller {
   }
 
   /**
-   * Strategy 3: UI Library-specific handling
+   * Strategy 3: UI Library-specific handling (using semantic locator)
    */
   protected async tryUILibraryFill(field: AutomatedField): Promise<FillResult> {
-    const library = await this.detectLibrary(field.selector);
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.UI_LIBRARY,
+        error: 'No locator available',
+      };
+    }
+
+    const library = await this.detectLibrary(locator);
     
     try {
       const value = String(field.value);
@@ -73,16 +96,16 @@ export class TextFiller extends BaseFiller {
       switch (library) {
         case UILibrary.MATERIAL_UI:
           // MUI inputs often need focus + clear + fill
-          await this.page.click(field.selector);
-          await this.page.fill(field.selector, ''); // Clear
-          await this.page.fill(field.selector, value);
+          await locator.click();
+          await locator.fill(''); // Clear
+          await locator.fill(value);
           await this.page.keyboard.press('Tab'); // Trigger blur
           break;
           
         case UILibrary.BOOTSTRAP:
         case UILibrary.VANILLA:
           // Standard fill usually works
-          await this.page.fill(field.selector, value);
+          await locator.fill(value);
           break;
           
         default:
@@ -111,10 +134,19 @@ export class TextFiller extends BaseFiller {
   }
 
   /**
-   * Strategy 4: Keyboard-based filling (human-like)
+   * Strategy 4: Keyboard-based filling (human-like, using semantic locator)
    */
   protected async tryKeyboardFill(field: AutomatedField, retryCount: number): Promise<FillResult> {
     try {
+      const locator = this.getLocator(field);
+      if (!locator) {
+        return {
+          success: false,
+          strategy: FillStrategy.KEYBOARD,
+          error: 'No locator available',
+        };
+      }
+
       const value = String(field.value);
       
       // Press Escape first to clear any focus traps (especially helpful on retry)
@@ -124,7 +156,7 @@ export class TextFiller extends BaseFiller {
       }
       
       // Focus the field
-      await this.page.click(field.selector);
+      await locator.click();
       await this.page.waitForTimeout(100);
       
       // Clear existing value
@@ -151,11 +183,21 @@ export class TextFiller extends BaseFiller {
   }
 
   /**
-   * Verification: Check if value was actually set
+   * Verification: Check if value was actually set (using semantic locator)
    */
   protected async verifyFill(field: AutomatedField): Promise<VerificationResult> {
     try {
-      const actual = await this.page.inputValue(field.selector);
+      const locator = this.getLocator(field);
+      if (!locator) {
+        return {
+          passed: false,
+          actual: undefined,
+          expected: String(field.value),
+          reason: 'No locator available for verification',
+        };
+      }
+
+      const actual = await locator.inputValue();
       const expected = String(field.value);
       
       // Normalize for comparison (trim and lowercase)

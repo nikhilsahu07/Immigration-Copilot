@@ -76,7 +76,6 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
 
 export function App() {
   const checkSession = useAuthStore((state) => state.checkSession);
-  const session = useAuthStore((state) => state.session);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [sessionRestored, setSessionRestored] = React.useState(false);
   
@@ -97,7 +96,7 @@ export function App() {
         try {
           // Validate and restore session in main process
           await checkSession();
-        } catch (error) {
+        } catch {
           // Session restoration failed - will be handled by auth flow
         }
       }

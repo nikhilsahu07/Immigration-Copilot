@@ -4,40 +4,55 @@ import { BaseFiller, AutomatedField, FillResult, FillStrategy, UILibrary, Verifi
 
 export class DateFiller extends BaseFiller {
   /**
-   * Strategy 1: Native Playwright fill
+   * Strategy 1: Native Playwright fill (using semantic locator)
    */
   protected async tryNativeFill(field: AutomatedField): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.NATIVE,
+        error: 'No locator available',
+      };
+    }
+
     try {
-      await this.scrollToElement(field.selector);
+      await this.scrollToLocator(locator);
       const dateString = this.normalizeDate(field.value);
-      await this.page.fill(field.selector, dateString, { timeout: 3000 });
+      await locator.fill(dateString, { timeout: 3000 });
       
       return {
         success: true,
         strategy: FillStrategy.NATIVE,
-        uiLibrary: await this.detectLibrary(field.selector),
+        uiLibrary: await this.detectLibrary(locator),
       };
     } catch (error) {
       return {
         success: false,
         strategy: FillStrategy.NATIVE,
         error: String(error),
-        domSnapshot: await this.captureDOMSnapshot(field.selector),
+        domSnapshot: await this.captureDOMSnapshot(locator),
       };
     }
   }
 
   /**
-   * Strategy 2: Direct DOM manipulation
+   * Strategy 2: Direct DOM manipulation (using semantic locator)
    */
   protected async tryDomFill(field: AutomatedField): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.DOM,
+        error: 'No locator available',
+      };
+    }
+
     try {
       const dateString = this.normalizeDate(field.value);
       
-      const success = await this.page.evaluate(({ selector, value }) => {
-        const el = document.querySelector(selector);
-        if (!el) return false;
-        
+      const success = await locator.evaluate((el: Element, value: string) => {
         if (el instanceof HTMLInputElement && el.type === 'date') {
           el.value = value;
           el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -45,9 +60,8 @@ export class DateFiller extends BaseFiller {
           el.dispatchEvent(new Event('blur', { bubbles: true }));
           return true;
         }
-        
         return false;
-      }, { selector: field.selector, value: dateString });
+      }, dateString);
       
       return {
         success,
@@ -64,10 +78,19 @@ export class DateFiller extends BaseFiller {
   }
 
   /**
-   * Strategy 3: UI Library-specific handling (datepickers)
+   * Strategy 3: UI Library-specific handling (using semantic locator)
    */
   protected async tryUILibraryFill(field: AutomatedField): Promise<FillResult> {
-    const library = await this.detectLibrary(field.selector);
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.UI_LIBRARY,
+        error: 'No locator available',
+      };
+    }
+
+    const library = await this.detectLibrary(locator);
     
     try {
       const dateString = this.normalizeDate(field.value);
@@ -75,9 +98,9 @@ export class DateFiller extends BaseFiller {
       switch (library) {
         case UILibrary.BOOTSTRAP: {
           // Bootstrap datepicker: set via data API if available
-          const bootstrapSuccess = await this.page.evaluate(({ sel, val }) => {
+          const bootstrapSuccess = await locator.evaluate((el: Element, val: string) => {
             try {
-              const $el = (window as any).$(sel);
+              const $el = (window as any).$(el);
               if ($el && $el.datepicker) {
                 $el.datepicker('setDate', val);
                 return true;
@@ -86,25 +109,25 @@ export class DateFiller extends BaseFiller {
               return false;
             }
             return false;
-          }, { sel: field.selector, val: dateString });
+          }, dateString);
           
           if (!bootstrapSuccess) {
             // Fallback to regular fill
-            await this.page.fill(field.selector, dateString);
+            await locator.fill(dateString);
           }
           break;
         }
           
         case UILibrary.MATERIAL_UI:
           // MUI DatePicker: click and type
-          await this.page.click(field.selector);
-          await this.page.fill(field.selector, dateString);
+          await locator.click();
+          await locator.fill(dateString);
           await this.page.keyboard.press('Tab');
           break;
           
         default:
           // Standard fill for unknown libraries
-          await this.page.fill(field.selector, dateString);
+          await locator.fill(dateString);
           break;
       }
       
@@ -124,9 +147,18 @@ export class DateFiller extends BaseFiller {
   }
 
   /**
-   * Strategy 4: Keyboard-based typing
+   * Strategy 4: Keyboard-based typing (using semantic locator)
    */
   protected async tryKeyboardFill(field: AutomatedField, retryCount: number): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.KEYBOARD,
+        error: 'No locator available',
+      };
+    }
+
     try {
       const dateString = this.normalizeDate(field.value);
       
@@ -136,7 +168,7 @@ export class DateFiller extends BaseFiller {
       }
       
       // Focus and clear
-      await this.page.click(field.selector);
+      await locator.click();
       await this.page.waitForTimeout(100);
       await this.page.keyboard.press('Control+A');
       await this.page.keyboard.press('Backspace');
@@ -159,11 +191,21 @@ export class DateFiller extends BaseFiller {
   }
 
   /**
-   * Verification: Check if date was set correctly
+   * Verification: Check if date was set correctly (using semantic locator)
    */
   protected async verifyFill(field: AutomatedField): Promise<VerificationResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        passed: false,
+        actual: undefined,
+        expected: String(field.value),
+        reason: 'No locator available for verification',
+      };
+    }
+
     try {
-      const actual = await this.page.inputValue(field.selector);
+      const actual = await locator.inputValue();
       const expected = this.normalizeDate(field.value);
       
       // Normalize both for comparison

@@ -3,46 +3,60 @@ import { BaseFiller, AutomatedField, FillResult, FillStrategy, UILibrary, Verifi
 
 export class RadioFiller extends BaseFiller {
   /**
-   * Strategy 1: Native Playwright check
+   * Strategy 1: Native Playwright check (using semantic locator)
    */
   protected async tryNativeFill(field: AutomatedField): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.NATIVE,
+        error: 'No locator available',
+      };
+    }
+
     try {
-      await this.scrollToElement(field.selector);
-      await this.page.check(field.selector, { timeout: 3000 });
+      await this.scrollToLocator(locator);
+      await locator.check({ timeout: 3000 });
       
       return {
         success: true,
         strategy: FillStrategy.NATIVE,
-        uiLibrary: await this.detectLibrary(field.selector),
+        uiLibrary: await this.detectLibrary(locator),
       };
     } catch (error) {
       return {
         success: false,
         strategy: FillStrategy.NATIVE,
         error: String(error),
-        domSnapshot: await this.captureDOMSnapshot(field.selector),
+        domSnapshot: await this.captureDOMSnapshot(locator),
       };
     }
   }
 
   /**
-   * Strategy 2: Direct DOM manipulation
+   * Strategy 2: Direct DOM manipulation (using semantic locator)
    */
   protected async tryDomFill(field: AutomatedField): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.DOM,
+        error: 'No locator available',
+      };
+    }
+
     try {
-      const success = await this.page.evaluate((selector) => {
-        const el = document.querySelector(selector);
-        if (!el) return false;
-        
+      const success = await locator.evaluate((el: Element) => {
         if (el instanceof HTMLInputElement && el.type === 'radio') {
           el.checked = true;
           el.dispatchEvent(new Event('change', { bubbles: true }));
           el.dispatchEvent(new Event('input', { bubbles: true }));
           return true;
         }
-        
         return false;
-      }, field.selector);
+      });
       
       return {
         success,
@@ -59,17 +73,26 @@ export class RadioFiller extends BaseFiller {
   }
 
   /**
-   * Strategy 3: UI Library-specific handling (custom radio buttons)
+   * Strategy 3: UI Library-specific handling (using semantic locator)
    */
   protected async tryUILibraryFill(field: AutomatedField): Promise<FillResult> {
-    const library = await this.detectLibrary(field.selector);
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.UI_LIBRARY,
+        error: 'No locator available',
+      };
+    }
+
+    const library = await this.detectLibrary(locator);
     
     try {
       switch (library) {
         case UILibrary.BOOTSTRAP: {
           // Bootstrap custom radio: click the label or parent
-          const clicked = await this.page.evaluate((selector) => {
-            const radio = document.querySelector(selector) as HTMLInputElement;
+          const clicked = await locator.evaluate((el: Element) => {
+            const radio = el as HTMLInputElement;
             if (!radio) return false;
             
             // Try clicking the parent label
@@ -78,9 +101,8 @@ export class RadioFiller extends BaseFiller {
               (label as HTMLElement).click();
               return true;
             }
-            
             return false;
-          }, field.selector);
+          });
           
           if (!clicked) {
             return {
@@ -95,7 +117,13 @@ export class RadioFiller extends BaseFiller {
           
         case UILibrary.MATERIAL_UI:
           // MUI radio: click the parent span or label
-          await this.page.click(`${field.selector} ~ .MuiRadio-root`, { timeout: 2000 });
+          await locator.click();
+          // Try to find and click the MUI radio root if available
+          try {
+            await this.page.locator('.MuiRadio-root').first().click({ timeout: 2000 });
+          } catch {
+            // Fallback to direct click
+          }
           break;
           
         default:
@@ -124,9 +152,18 @@ export class RadioFiller extends BaseFiller {
   }
 
   /**
-   * Strategy 4: Keyboard-based (click + Space)
+   * Strategy 4: Keyboard-based (click + Space, using semantic locator)
    */
   protected async tryKeyboardFill(field: AutomatedField, retryCount: number): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.KEYBOARD,
+        error: 'No locator available',
+      };
+    }
+
     try {
       if (retryCount > 0) {
         await this.page.keyboard.press('Escape');
@@ -134,7 +171,7 @@ export class RadioFiller extends BaseFiller {
       }
       
       // Focus and select with Space key
-      await this.page.click(field.selector);
+      await locator.click();
       await this.page.waitForTimeout(100);
       await this.page.keyboard.press('Space');
       
@@ -152,11 +189,21 @@ export class RadioFiller extends BaseFiller {
   }
 
   /**
-   * Verification: Check if radio is checked
+   * Verification: Check if radio is checked (using semantic locator)
    */
   protected async verifyFill(field: AutomatedField): Promise<VerificationResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        passed: false,
+        actual: undefined,
+        expected: 'true',
+        reason: 'No locator available for verification',
+      };
+    }
+
     try {
-      const isChecked = await this.page.isChecked(field.selector);
+      const isChecked = await locator.isChecked();
       
       return {
         passed: isChecked,

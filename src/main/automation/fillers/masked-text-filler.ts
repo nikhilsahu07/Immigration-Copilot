@@ -1,6 +1,6 @@
 
 import { TextFiller } from './text-filler';
-import { AutomatedField, FillResult, VerificationResult } from './base-filler';
+import { AutomatedField, FillResult, FillStrategy, VerificationResult } from './base-filler';
 
 /**
  * MaskedTextFiller - Handles formatted text inputs (phone, SSN, postal code)
@@ -32,17 +32,25 @@ export class MaskedTextFiller extends TextFiller {
   }
 
   /**
-   * DOM fill with format stripping
+   * DOM fill with format stripping (using semantic locator - inherited from TextFiller)
    */
   protected async tryDomFill(field: AutomatedField): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.DOM,
+        error: 'No locator available',
+      };
+    }
+
     try {
       // Try both formatted and unformatted
       const formatted = String(field.value);
       const unformatted = formatted.replace(/[\s\-()]/g, '');
       
-      const success = await this.page.evaluate(({ selector, vals }) => {
-        const el = document.querySelector(selector);
-        if (!el || !(el instanceof HTMLInputElement)) return false;
+      const success = await locator.evaluate((el: Element, vals: { formatted: string; unformatted: string }) => {
+        if (!(el instanceof HTMLInputElement)) return false;
         
         // Try unformatted first (masks usually handle formatting)
         el.value = vals.unformatted;
@@ -51,7 +59,7 @@ export class MaskedTextFiller extends TextFiller {
         el.dispatchEvent(new Event('blur', { bubbles: true }));
         
         return true;
-      }, { selector: field.selector, vals: { formatted, unformatted } });
+      }, { formatted, unformatted });
       
       return {
         success,
@@ -68,11 +76,21 @@ export class MaskedTextFiller extends TextFiller {
   }
 
   /**
-   * Enhanced verification - compare unformatted values
+   * Enhanced verification - compare unformatted values (using semantic locator)
    */
   protected async verifyFill(field: AutomatedField): Promise<VerificationResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        passed: false,
+        actual: undefined,
+        expected: String(field.value),
+        reason: 'No locator available for verification',
+      };
+    }
+
     try {
-      const actualRaw = await this.page.inputValue(field.selector);
+      const actualRaw = await locator.inputValue();
       const expectedRaw = String(field.value);
       
       // Strip formatting from both
