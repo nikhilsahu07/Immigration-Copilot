@@ -14,7 +14,13 @@ export class OtpDetector {
       const otpInput = document.querySelector('input[name*="otp"], input[id*="otp"], input[placeholder*="otp"]');
       if (otpInput) {
         const el = otpInput as HTMLElement;
-        const selector = el.id ? `#${el.id}` : `[name="${(otpInput as HTMLInputElement).name}"]`;
+        // Use attribute selector for IDs with special characters to avoid CSS parsing errors
+        const id = el.id;
+        const selector = id 
+          ? (/[!"#$%&'()*+,.\/:;<=>?@[\\\]^`{|}~ ]/.test(id)
+              ? `[id="${id.replace(/"/g, '\\"')}"]`
+              : `#${id}`)
+          : `[name="${(otpInput as HTMLInputElement).name}"]`;
         return { detected: true, selector };
       }
       return { detected: false };

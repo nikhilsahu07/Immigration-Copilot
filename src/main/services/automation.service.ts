@@ -58,6 +58,7 @@ export class AutomationService {
       isRunning: () => this.isRunning,
       isPaused: () => this.isPaused,
       setCurrentMapping: (mapping) => { this.currentMapping = mapping; },
+      getCurrentMapping: () => this.currentMapping,
       getModeManager: () => this.modeManager,
     });
 
@@ -126,18 +127,34 @@ export class AutomationService {
     const normalizedCurrentURL = currentURL ? this.normalizeURL(currentURL) : null;
     const normalizedPortalURL = this.normalizeURL(portalURL);
 
+    // CRITICAL: Show BrowserView FIRST before loading URL or connecting to CDP
+    // This ensures it's visible throughout the entire process
+    bvm.show();
+    
+    // CRITICAL: Lock BrowserView to prevent it from being hidden during automation
+    bvm.lockHide();
+
     if (normalizedCurrentURL && normalizedCurrentURL !== normalizedPortalURL) {
       logger.info(`Starting from current page: ${currentURL}`);
       EventEmitter.emitStatus('Starting from current page...', 5);
-      bvm.show();
       await automationJobRepository.updateCurrentUrl(job._id, currentURL!);
       job.currentUrl = currentURL!;
     } else {
       EventEmitter.emitStatus('Loading portal...', 5);
       await bvm.loadURL(portalURL);
-      bvm.show();
       await automationJobRepository.updateCurrentUrl(job._id, portalURL);
       job.currentUrl = portalURL;
+    }
+
+    // Wait for page to be ready before connecting to CDP
+    // This ensures the page is fully loaded when we connect
+    EventEmitter.emitStatus('Waiting for page load...', 7);
+    try {
+      await bvm.waitForPageLoad(15000); // Wait up to 15 seconds for page to load
+      logger.info('Page load confirmed');
+    } catch (error) {
+      logger.warn('Page load wait failed, proceeding anyway', error);
+      // Continue anyway - page might be ready even if wait failed
     }
     
     // 4. Connect via CDP and start processing
@@ -146,7 +163,19 @@ export class AutomationService {
       await browserConnector.connect();
       await new Promise(r => setTimeout(r, 100));
 
+      // CRITICAL: Ensure BrowserView is visible after CDP connection
+      // CDP connection might cause BrowserView to be hidden, so we re-show it
+      bvm.show();
+
       await automationJobRepository.updateStatus(job._id, 'running');
+      
+      // CRITICAL: Re-show BrowserView after status update
+      // Status update might trigger something that hides BrowserView, so ensure it stays visible
+      bvm.show();
+      
+      // Small delay to ensure BrowserView visibility is set before starting job loop
+      await new Promise(r => setTimeout(r, 200));
+      
       automationLoopLogger.info(`Starting automation job loop for job ${job._id}`);
       void this.runJobLoop(job._id);
     } catch (e) {
@@ -164,6 +193,17 @@ export class AutomationService {
   private async runJobLoop(jobId: string): Promise<void> {
     this.isRunning = true;
     automationLoopLogger.info(`runJobLoop started for job ${jobId}`);
+    
+    // CRITICAL: Ensure BrowserView is visible when job loop starts
+    // This prevents it from being hidden during automation
+    const bvm = getBrowserViewManager();
+    if (bvm && bvm.isShowing()) {
+      // Already showing, but ensure it stays visible
+      bvm.show();
+    } else if (bvm) {
+      // Not showing, show it now
+      bvm.show();
+    }
 
     try {
       while (this.isRunning) {
@@ -207,6 +247,15 @@ export class AutomationService {
         const customPrompt = job.customPrompt;
         const checkpoint: AutomationCheckpoint | null = job.checkpoint ?? null;
 
+        // CRITICAL: Check if we're waiting for user approval before processing
+        // If a mapping exists, we're waiting for approval - don't process the same page again
+        if (this.currentMapping) {
+          automationLoopLogger.info('Waiting for user approval - pausing loop iteration');
+          // Wait a bit before checking again (don't spin the CPU)
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+
         // Delegate to PageProcessor
         let result: PageIterationResult;
         if (checkpoint) {
@@ -227,17 +276,36 @@ export class AutomationService {
           continue;
         }
 
-        if (result.kind === 'page_done') continue;
+        if (result.kind === 'page_done') {
+          // After page_done, check if we're now waiting for approval
+          // If so, the next loop iteration will pause (checked above)
+          // If not, continue to process next page
+          continue;
+        }
 
         if (result.kind === 'job_completed') {
           await automationJobRepository.updateStatus(jobId, 'completed');
           this.isRunning = false;
+          
+          // Unlock BrowserView when automation completes
+          const bvm = getBrowserViewManager();
+          if (bvm) {
+            bvm.unlockHide();
+          }
+          
           break;
         }
 
         if (result.kind === 'job_failed') {
           await automationJobRepository.setError(jobId, result.reason || 'Automation failed');
           this.isRunning = false;
+          
+          // Unlock BrowserView when automation fails
+          const bvm = getBrowserViewManager();
+          if (bvm) {
+            bvm.unlockHide();
+          }
+          
           break;
         }
       }
@@ -245,6 +313,12 @@ export class AutomationService {
       automationLoopLogger.error(`runJobLoop error: ${(error as Error).message}`);
       await automationJobRepository.setError(jobId, (error as Error).message);
       this.isRunning = false;
+      
+      // Unlock BrowserView on error
+      const bvm = getBrowserViewManager();
+      if (bvm) {
+        bvm.unlockHide();
+      }
     } finally {
       automationLoopLogger.info(`runJobLoop finished for job ${jobId}`);
     }
@@ -264,6 +338,13 @@ export class AutomationService {
     this.isRunning = false;
     this.isPaused = false;
     this.currentMapping = null;
+    
+    // Unlock BrowserView when automation stops
+    const bvm = getBrowserViewManager();
+    if (bvm) {
+      bvm.unlockHide();
+    }
+    
     EventEmitter.emitStatus('Automation stopped', 0);
   }
 

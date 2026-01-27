@@ -7,7 +7,8 @@ export { generateFieldId } from './field-id-generator';
 export { 
   filterFormFields, 
   createMinimalCanonicalField, 
-  createCleanCanonicalFieldsLog 
+  createCleanCanonicalFieldsLog,
+  createCleanCanonicalFieldsForAI
 } from './canonical-field-logger';
 export { FieldResolver } from './field-resolver';
 export { CanonicalFieldsMap } from './canonical-fields-map';

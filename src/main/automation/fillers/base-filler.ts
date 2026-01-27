@@ -204,7 +204,13 @@ export abstract class BaseFiller {
         ? locatorOrSelector 
         : await locatorOrSelector.evaluate((el: Element) => {
             // Generate a selector for the element
-            if (el.id) return `#${el.id}`;
+            // Use attribute selector for IDs with special characters to avoid CSS parsing errors
+            if (el.id) {
+              const id = el.id;
+              return /[!"#$%&'()*+,.\/:;<=>?@[\\\]^`{|}~ ]/.test(id)
+                ? `[id="${id.replace(/"/g, '\\"')}"]`
+                : `#${id}`;
+            }
             if (el.className) return `.${Array.from(el.classList)[0]}`;
             return el.tagName.toLowerCase();
           }).catch(() => '');

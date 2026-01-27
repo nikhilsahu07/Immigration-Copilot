@@ -49,6 +49,7 @@ export interface PageProcessorDependencies {
   isRunning: () => boolean;
   isPaused: () => boolean;
   setCurrentMapping: (mapping: any) => void;
+  getCurrentMapping: () => any | null;
   getModeManager: () => { isAutoMode: () => boolean };
 }
 
@@ -73,6 +74,15 @@ export class PageProcessor {
     }
 
     try {
+      // CRITICAL: Check if we're already waiting for user approval
+      // If a mapping exists, we're waiting for approval - don't process the same page again
+      const currentMapping = this.deps.getCurrentMapping();
+      if (currentMapping) {
+        logger.info('Waiting for user approval - skipping page processing');
+        EventEmitter.emitStatus('Waiting for approval...', 70);
+        return { kind: 'page_done' };
+      }
+
       EventEmitter.emitStatus('Downloading page structure...', 15);
       EventEmitter.emitPageChanged(job.currentPage || 1, job.totalPages || 10);
 
@@ -83,12 +93,17 @@ export class PageProcessor {
       try {
         page = await browserConnector.getPageByUrl(portalDomain);
         // Verify page URL matches
-        if (job.currentUrl && page.url() !== job.currentUrl) {
-          logger.warn(
-            `Page URL mismatch. Expected: ${job.currentUrl}, Got: ${page.url()}.`
+        const pageUrl = page.url();
+        if (job.currentUrl && pageUrl !== job.currentUrl) {
+          logger.info(
+            `Page URL changed. Previous: ${job.currentUrl}, Current: ${pageUrl}. Processing new page.`
           );
-          await automationJobRepository.updateCurrentUrl(job._id, page.url());
-          job.currentUrl = page.url();
+          await automationJobRepository.updateCurrentUrl(job._id, pageUrl);
+          job.currentUrl = pageUrl;
+        } else if (job.currentUrl && pageUrl === job.currentUrl) {
+          // Same URL - check if we've already processed this page recently
+          // This prevents infinite loops when waiting for approval
+          logger.debug(`Processing page at URL: ${pageUrl}`);
         }
       } catch {
         logger.warn(`Could not find page for ${portalDomain}, waiting...`);
@@ -382,8 +397,41 @@ export class PageProcessor {
       otp: aiResult.otp
     };
     this.deps.setCurrentMapping(mapping);
-    EventEmitter.emitFormMapping(mapping);
+    EventEmitter.emitMapping(mapping);
 
+    // CRITICAL: In auto mode, auto-submit the form
+    // Otherwise, return page_done and wait for user approval
+    if (isAutoMode && mapping.actions.length > 0) {
+      logger.info('Auto mode: Auto-submitting form after filling fields');
+      EventEmitter.emitStatus('Auto-submitting form...', 80);
+      
+      // Import FormSubmissionHandler dynamically to avoid circular dependency
+      const { FormSubmissionHandler } = await import('./form-submission-handler');
+      const formSubmissionHandler = new FormSubmissionHandler(
+        () => this.deps.getCurrentJob(),
+        () => this.deps.getCurrentMapping(),
+        (mapping) => { this.deps.setCurrentMapping(mapping); }
+      );
+      
+      await formSubmissionHandler.approveMapping(mapping);
+      
+      // After submission, wait a bit for navigation
+      await page.waitForTimeout(1000);
+      
+      // Check if URL changed (form was submitted)
+      const newUrl = page.url();
+      const currentJob = this.deps.getCurrentJob();
+      if (currentJob && newUrl !== currentJob.currentUrl) {
+        logger.info(`Form submitted. URL changed from ${currentJob.currentUrl} to ${newUrl}`);
+        await automationJobRepository.updateCurrentUrl(currentJob._id, newUrl);
+        await automationJobRepository.clearCheckpoint(currentJob._id);
+        this.deps.setCurrentMapping(null); // Clear mapping after submission
+        return { kind: 'page_done' }; // Process the new page in next iteration
+      }
+    }
+
+    // Not in auto mode or no actions - wait for user approval
+    logger.info('Form filled. Waiting for user approval before submission.');
     return { kind: 'page_done' };
   }
 }

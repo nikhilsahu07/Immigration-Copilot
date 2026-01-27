@@ -4,6 +4,55 @@ import { BaseFiller, AutomatedField, FillResult, FillStrategy, UILibrary, Verifi
 
 export class SelectFiller extends BaseFiller {
   /**
+   * Resolve how we should interpret the expected value for a select:
+   * - raw: original expected value from Gemini (e.g. "99")
+   * - valueForSelect: best candidate for the underlying <select>.value
+   * - displayText: best candidate for visible option text (for UI libraries / keyboard)
+   *
+   * Uses canonicalField.options when available to:
+   * - Map backend values like "99" -> label "India"
+   * - Optionally interpret numeric strings as 1-based index into options if no direct value match
+   */
+  private resolveExpected(field: AutomatedField): {
+    raw: string;
+    valueForSelect: string;
+    displayText: string;
+  } {
+    const raw = String(field.value ?? '');
+    let valueForSelect = raw;
+    let displayText = raw;
+
+    const options = this.canonicalField?.options ?? [];
+
+    if (options.length > 0) {
+      // 1) Prefer direct match by option.value
+      const byValue = options.find(
+        (opt) => opt.value !== null && String(opt.value) === raw
+      );
+      if (byValue) {
+        valueForSelect = String(byValue.value ?? raw);
+        displayText = byValue.label || raw;
+        return { raw, valueForSelect, displayText };
+      }
+
+      // 2) If raw is numeric and no value match, interpret as 1-based index into options
+      const numeric = Number(raw);
+      if (!Number.isNaN(numeric) && Number.isInteger(numeric)) {
+        const idx = numeric - 1; // 1-based -> 0-based
+        if (idx >= 0 && idx < options.length) {
+          const opt = options[idx];
+          valueForSelect = String(opt.value ?? opt.label ?? raw);
+          displayText = opt.label || String(opt.value ?? raw);
+          return { raw, valueForSelect, displayText };
+        }
+      }
+    }
+
+    // Fallback: no canonical options or no match, use raw as-is
+    return { raw, valueForSelect, displayText };
+  }
+
+  /**
    * Strategy 1: Native Playwright selectOption (using semantic locator)
    */
   protected async tryNativeFill(field: AutomatedField): Promise<FillResult> {
@@ -16,14 +65,14 @@ export class SelectFiller extends BaseFiller {
       };
     }
 
-    const value = String(field.value);
+    const { valueForSelect, displayText } = this.resolveExpected(field);
     
     try {
       await this.scrollToLocator(locator);
       
       // Try by value first
       try {
-        await locator.selectOption({ value }, { timeout: 2000 });
+        await locator.selectOption({ value: valueForSelect }, { timeout: 2000 });
         return {
           success: true,
           strategy: FillStrategy.NATIVE,
@@ -35,7 +84,7 @@ export class SelectFiller extends BaseFiller {
 
       // Try by label (visible text)
       try {
-        await locator.selectOption({ label: value }, { timeout: 2000 });
+        await locator.selectOption({ label: displayText }, { timeout: 2000 });
         return {
           success: true,
           strategy: FillStrategy.NATIVE,
@@ -74,19 +123,21 @@ export class SelectFiller extends BaseFiller {
       };
     }
 
+    const { valueForSelect, displayText } = this.resolveExpected(field);
+
     try {
-      const value = String(field.value);
-      
       const success = await locator.evaluate((el: Element, searchValue: string) => {
         const selectEl = el as HTMLSelectElement;
         if (!selectEl) return false;
         
         // Find option that contains the value (case-insensitive)
         const searchLower = searchValue.toLowerCase();
-        const options = Array.from(el.options);
+        const options = Array.from(selectEl.options);
         
-        // First try exact match
-        let match = options.find(o => o.value === searchValue || o.text.trim() === searchValue);
+        // First try exact match on value or text
+        let match = options.find(
+          (o) => o.value === searchValue || o.text.trim() === searchValue
+        );
         
         // Then try partial contains
         if (!match) {
@@ -96,20 +147,20 @@ export class SelectFiller extends BaseFiller {
           );
         }
         
-        // Try numeric match
+        // Try numeric match on value for purely numeric search strings
         if (!match && !isNaN(Number(searchValue))) {
-          match = options.find(o => o.value === searchValue);
+          match = options.find((o) => o.value === searchValue);
         }
         
         if (match) {
-          el.value = match.value;
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          el.dispatchEvent(new Event('input', { bubbles: true }));
+          selectEl.value = match.value;
+          selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+          selectEl.dispatchEvent(new Event('input', { bubbles: true }));
           return true;
         }
         
         return false;
-      }, value);
+      }, valueForSelect || displayText);
       
       return {
         success,
@@ -139,7 +190,7 @@ export class SelectFiller extends BaseFiller {
     }
 
     const library = await this.detectLibrary(locator);
-    const value = String(field.value);
+    const { valueForSelect, displayText } = this.resolveExpected(field);
     
     try {
       switch (library) {
@@ -147,14 +198,14 @@ export class SelectFiller extends BaseFiller {
           // MUI Select: click to open, find option, click
           await locator.click();
           await this.page.waitForSelector('[role="listbox"]', { timeout: 2000 });
-          await this.page.click(`[role="option"]:has-text("${value}")`);
+          await this.page.click(`[role="option"]:has-text("${displayText}")`);
           break;
           
         case UILibrary.BOOTSTRAP: {
           // Bootstrap-select: click trigger, find option in menu
           await locator.click();
           await this.page.waitForSelector('.dropdown-menu', { state: 'visible', timeout: 2000 });
-          await this.page.click(`.dropdown-menu >> text="${value}"`);
+          await this.page.click(`.dropdown-menu >> text="${displayText}"`);
           break;
         }
           
@@ -171,7 +222,7 @@ export class SelectFiller extends BaseFiller {
               return false;
             }
             return false;
-          }, value);
+          }, valueForSelect);
           
           if (!select2Success) {
             return {
@@ -197,7 +248,7 @@ export class SelectFiller extends BaseFiller {
               return false;
             }
             return false;
-          }, value);
+          }, valueForSelect);
           
           if (!tomSuccess) {
             return {
@@ -249,7 +300,7 @@ export class SelectFiller extends BaseFiller {
     }
 
     try {
-      const value = String(field.value);
+      const { displayText } = this.resolveExpected(field);
       
       // Press Escape first on retry
       if (retryCount > 0) {
@@ -266,7 +317,7 @@ export class SelectFiller extends BaseFiller {
       await this.page.waitForTimeout(100);
       
       // Type the value to search
-      await this.page.keyboard.type(value, { delay: 50 });
+      await this.page.keyboard.type(displayText, { delay: 50 });
       await this.page.waitForTimeout(200);
       
       // Press Enter to select
@@ -306,16 +357,27 @@ export class SelectFiller extends BaseFiller {
         return selectEl.options[selectEl.selectedIndex]?.text || selectEl.value;
       });
       
-      const expected = String(field.value);
-      
-      // Check exact match or partial contains (case-insensitive)
-      const passed = actual === expected || 
-                     actual?.toLowerCase().includes(expected.toLowerCase());
+      const { raw, valueForSelect, displayText } = this.resolveExpected(field);
+
+      const expectedCandidates = new Set<string>();
+      if (raw) expectedCandidates.add(raw);
+      if (valueForSelect) expectedCandidates.add(valueForSelect);
+      if (displayText) expectedCandidates.add(displayText);
+
+      const actualStr = actual ?? '';
+      const actualLower = actualStr.toLowerCase();
+
+      const passed =
+        Array.from(expectedCandidates).some(
+          (exp) =>
+            exp === actualStr ||
+            actualLower.includes(exp.toLowerCase())
+        );
       
       return {
         passed: passed ? true : false,
-        actual: actual || undefined,
-        expected,
+        actual: actualStr || undefined,
+        expected: displayText,
         reason: passed ? undefined : 'Selected option does not match expected value',
       };
     } catch (error) {

@@ -122,6 +122,17 @@ export function AutomationPage() {
     }
   }, [location.pathname, selectedPortal, browserViewShown, isRunning, portals, loadUrl, setBrowserViewShown]);
 
+  // Ensure BrowserView is shown when automation starts
+  useEffect(() => {
+    if (isRunning && selectedPortal && !browserViewShown) {
+      // When automation starts, ensure BrowserView is visible
+      api.browserView.show().catch(() => {
+        // Ignore errors - main process should handle this
+      });
+      setBrowserViewShown(true);
+    }
+  }, [isRunning, selectedPortal, browserViewShown, setBrowserViewShown]);
+
   // Cleanup: Hide browser view when navigating away from automation page
   useEffect(() => {
     return () => {

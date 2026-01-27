@@ -5,7 +5,7 @@ import { logger, geminiPromptLogger, geminiResponseLogger, htmlFieldsStructureLo
 
 import { BehaviorFormMapping } from '../../shared/types';
 import { CanonicalField } from '../../shared/types/automation.types';
-import { filterFormFields } from '../automation/utils/canonical-field-logger';
+import { createCleanCanonicalFieldsForAI } from '../automation/utils/canonical-field-logger';
 import { parseGeminiResponse } from './gemini-response-schema';
 
 export type AIAnalysisResult = BehaviorFormMapping;
@@ -54,10 +54,12 @@ export class AIService {
           ===============================================================================
           
           1. OUTPUT FORMAT: Return ONLY a single valid JSON object. NO explanations, NO markdown, NO code fences, NO backticks, NO multiple candidates. Start with { and end with }.
-          2. ACTIONS CONTRACT: The "actions" array MUST contain EXACTLY ONE primary action per page (no more, no less).
-          3. MISSING DATA: Use "expectedValue": "__MISSING__" and "status": "missing_data" for unknown values. NEVER invent fake data.
-          4. DASHBOARD PAGES: Must have "fields": [] (empty array) and exactly one action.
-          5. FORM PAGES: Must map ALL visible fields from the structure, and include exactly one primary action (submit/next button).
+          2. COMPLETE JSON: The JSON MUST be complete and valid. ALL strings must be closed with quotes, ALL arrays closed with ], ALL objects closed with }. Incomplete JSON will cause parsing failure.
+          3. ACTIONS CONTRACT: The "actions" array MUST contain EXACTLY ONE primary action per page (no more, no less).
+          4. MISSING DATA: Use "expectedValue": "__MISSING__" and "status": "missing_data" for unknown values. NEVER invent fake data.
+          5. DASHBOARD PAGES: Must have "fields": [] (empty array) and exactly one action.
+          6. FORM PAGES: Must map ALL visible fields from the structure, and include exactly one primary action (submit/next button).
+          7. TRUNCATION PREVENTION: If you have many fields, ensure you complete the JSON structure. It's better to have fewer complete fields than many incomplete ones.
           
           ===============================================================================
 
@@ -81,14 +83,18 @@ export class AIService {
           ${screenshotBase64 ? `CRITICAL INSTRUCTION: An image of the webpage is attached.\n1. Use the IMAGE to understand the visual layout, context, and which form corresponds to the user's intent. Use the HTML fields provided below strictly for extracting correct CSS selectors.\n2. If there is a visual conflict between HTML and Image, prioritize the Image for "Context" but the HTML/fields for "Selectors".` : ''}
 
           FORM FIELDS STRUCTURE (Canonical Schema - Pre-processed HTML):
-          ${JSON.stringify(filterFormFields(canonicalFields), null, 2)}
+          ${createCleanCanonicalFieldsForAI(canonicalFields)}
           
           NOTE: This structure uses semantic identifiers:
           - "fieldId" is the PRIMARY identifier you MUST use in your response
-          - "accessibleName" is the semantic name (for reference)
-          - "controlType" indicates the field type (text, email, select, etc.)
-          - "interactionHints.inputMode" shows how to interact (type, click, select, etc.)
-          - "fallback.selector" is provided for reference only - DO NOT use in response
+          - "accessibleName" is the semantic name (for field matching - use this for fieldName)
+          - "tag" is the HTML tag (input, select, textarea, button)
+          - "controlType" indicates the field type (text, email, select, checkbox, etc.) - use this to determine behavior
+          - "role" is the ARIA role (textbox, combobox, button, etc.) - helps with semantic matching
+          - "labels" contains labelText, placeholder, or ariaLabel (for semantic matching)
+          - "required" indicates if field is required (for constraints)
+          - "options" contains select/radio options (only present if field has options)
+          - "positionInForm" helps disambiguate when multiple similar fields exist
 
           FIELD BEHAVIOR TYPES (CRITICAL - choose the most specific):
           - "text_entry" = simple text input
@@ -203,6 +209,8 @@ export class AIService {
               - NO markdown code block markers (no triple backticks)
               - NO text outside the JSON object
               - The JSON MUST be complete and valid - ensure all strings are properly closed, all arrays/objects are properly closed
+              - CRITICAL: If you have many fields, prioritize completing the JSON structure over including every field
+              - ALWAYS close all strings, arrays, and objects - incomplete JSON will cause parsing failure
               - Contract violation = parsing failure
           
           ===============================================================================

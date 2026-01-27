@@ -7,6 +7,7 @@ export class BrowserViewManager {
   private mainWindow: BrowserWindow;
   private isVisible: boolean = false;
   private leftPanelWidth: number = 400;
+  private hideLocked: boolean = false; // Prevents hiding during automation
 
   constructor(mainWindow: BrowserWindow) {
     this.mainWindow = mainWindow;
@@ -30,6 +31,20 @@ export class BrowserViewManager {
       },
     });
 
+    const webContents = this.browserView.webContents;
+
+    // Ensure links that would normally open in a new window/tab
+    // (target="_blank", window.open, etc.) instead load in THIS BrowserView.
+    // This keeps Playwright attached to a single page and avoids “new Electron tab” issues.
+    webContents.setWindowOpenHandler(({ url }) => {
+      logger.info(`Intercepting new window request, loading in same BrowserView: ${url}`);
+      // Fire and forget – navigation errors are logged but do not crash the app
+      webContents.loadURL(url).catch(err => {
+        logger.error('Failed to load intercepted URL in BrowserView:', err);
+      });
+      return { action: 'deny' }; // Prevent Electron from creating a new window
+    });
+
     logger.info('BrowserView created');
     return this.browserView;
   }
@@ -40,8 +55,11 @@ export class BrowserViewManager {
     }
 
     try {
+      if (!this.browserView) {
+        throw new Error('BrowserView is not available');
+      }
       logger.info(`Loading URL in BrowserView: ${url}`);
-      await this.browserView!.webContents.loadURL(url);
+      await this.browserView.webContents.loadURL(url);
       logger.info('URL loaded successfully');
     } catch (error) {
       logger.error('Failed to load URL:', error);
@@ -49,18 +67,81 @@ export class BrowserViewManager {
     }
   }
 
+  /**
+   * Wait for the BrowserView page to finish loading
+   * Returns a promise that resolves when the page has finished loading
+   */
+  async waitForPageLoad(timeout: number = 10000): Promise<void> {
+    if (!this.browserView?.webContents) {
+      throw new Error('BrowserView is not available');
+    }
+
+    return new Promise((resolve, reject) => {
+      const webContents = this.browserView?.webContents;
+      if (!webContents) {
+        reject(new Error('BrowserView webContents is not available'));
+        return;
+      }
+
+      let timeoutId: NodeJS.Timeout | undefined = undefined;
+
+      const onDidFinishLoad = () => {
+        if (timeoutId) clearTimeout(timeoutId);
+        webContents.removeListener('did-fail-load', onDidFailLoad);
+        logger.info('BrowserView page finished loading');
+        // Small delay to ensure DOM is fully rendered
+        setTimeout(resolve, 500);
+      };
+
+      const onDidFailLoad = (_event: Electron.Event, errorCode: number, errorDescription: string) => {
+        if (timeoutId) clearTimeout(timeoutId);
+        webContents.removeListener('did-finish-load', onDidFinishLoad);
+        logger.error(`BrowserView page failed to load: ${errorCode} - ${errorDescription}`);
+        reject(new Error(`Page failed to load: ${errorDescription}`));
+      };
+
+      // Check if already loaded
+      if (!webContents.isLoading()) {
+        logger.info('BrowserView page already loaded');
+        setTimeout(resolve, 500);
+        return;
+      }
+
+      timeoutId = setTimeout(() => {
+        webContents.removeListener('did-finish-load', onDidFinishLoad);
+        webContents.removeListener('did-fail-load', onDidFailLoad);
+        logger.warn('BrowserView page load timeout, proceeding anyway');
+        resolve(); // Resolve instead of reject to allow continuation
+      }, timeout);
+
+      webContents.once('did-finish-load', onDidFinishLoad);
+      webContents.once('did-fail-load', onDidFailLoad);
+    });
+  }
+
   show(): void {
     if (!this.browserView) {
       this.create();
     }
 
-    this.mainWindow.setBrowserView(this.browserView!);
+    if (!this.browserView) {
+      logger.error('Failed to create BrowserView');
+      return;
+    }
+
+    this.mainWindow.setBrowserView(this.browserView);
     this.isVisible = true;
     this.updateBounds();
     logger.info('BrowserView shown');
   }
 
   hide(): void {
+    // CRITICAL: Prevent hiding during automation
+    if (this.hideLocked) {
+      logger.debug('BrowserView hide blocked - automation is running');
+      return;
+    }
+
     if (this.browserView && !this.mainWindow.isDestroyed()) {
       try {
         this.mainWindow.removeBrowserView(this.browserView);
@@ -71,6 +152,22 @@ export class BrowserViewManager {
         logger.debug(`Could not remove BrowserView (window may be destroyed) ${error}`);
       }
     }
+  }
+
+  /**
+   * Lock BrowserView to prevent hiding (used during automation)
+   */
+  lockHide(): void {
+    this.hideLocked = true;
+    logger.debug('BrowserView hide locked');
+  }
+
+  /**
+   * Unlock BrowserView to allow hiding
+   */
+  unlockHide(): void {
+    this.hideLocked = false;
+    logger.debug('BrowserView hide unlocked');
   }
 
   toggle(): void {

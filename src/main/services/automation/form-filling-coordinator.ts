@@ -161,6 +161,18 @@ export class FormFillingCoordinator {
   }
 
   /**
+   * Filter eligible fields for filling
+   * Returns only fields that should be filled based on confidence and mode
+   */
+  static filterEligibleFields(
+    fields: BehaviorField[],
+    isAutoMode: boolean
+  ): BehaviorField[] {
+    const result = this.filterByConfidence(fields, isAutoMode);
+    return result.eligible;
+  }
+
+  /**
    * Filter fields by confidence level
    */
   static filterByConfidence(

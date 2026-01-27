@@ -127,7 +127,29 @@ export class FieldExtractor {
             if (text && text.length < 50) return text;
           }
 
-          // Strategy 5: Closest element with "label" in class
+          // Strategy 5: Closest ancestor "form-group" label (handles label + div + select)
+          let ancestor: Element | null = element.parentElement;
+          let depth = 0;
+          const MAX_DEPTH = 5;
+          while (ancestor && depth < MAX_DEPTH) {
+            // Common container classes for grouped fields
+            const ancestorClass = (ancestor as HTMLElement).className || '';
+            const isFormGroup =
+              typeof ancestorClass === 'string' &&
+              /form-group|form-group|form-field|field|form-row/i.test(ancestorClass);
+
+            if (isFormGroup) {
+              const labelInGroup = ancestor.querySelector('label');
+              if (labelInGroup) {
+                const text = labelInGroup.textContent?.trim();
+                if (text && text.length < 200) return text;
+              }
+            }
+            ancestor = ancestor.parentElement;
+            depth++;
+          }
+
+          // Strategy 6: Closest element with "label" in class
           let current: Element | null = element.parentElement;
           while (current) {
             const className = (current as HTMLElement).className || '';
@@ -138,7 +160,7 @@ export class FieldExtractor {
             current = current.parentElement;
           }
 
-          // Strategy 6: aria-labelledby
+          // Strategy 7: aria-labelledby
           const ariaLabelledBy = element.getAttribute('aria-labelledby');
           if (ariaLabelledBy) {
             const labelEl = document.getElementById(ariaLabelledBy);
@@ -148,7 +170,7 @@ export class FieldExtractor {
             }
           }
 
-          // Strategy 7: fall back to element's own text (for CTA buttons/links)
+          // Strategy 8: fall back to element's own text (for CTA buttons/links)
           const selfText = element.textContent?.trim();
           if (selfText && selfText.length < 120) return selfText;
 
@@ -244,10 +266,12 @@ export class FieldExtractor {
       const root = document.body as Element;
 
       // Get all candidate interactive elements
-      // Include: form inputs, buttons, and ALL links (for navigation actions like "Manage Students", "Manage Applications")
+      // Include: form inputs, buttons, and ONLY button-like links (CTAs), NOT every <a>.
+      // This avoids treating dropdown menu items like individual countries (e.g. "Afghanistan")
+      // as separate canonical fields; those should appear only as options on a single field.
       const candidates = Array.from(
         root.querySelectorAll(
-          'input, textarea, select, button, a, [role="radio"], [role="checkbox"], [role="button"]'
+          'input, textarea, select, button, a.btn, a.button, a[role="button"], a[class*="btn"], [role="radio"], [role="checkbox"], [role="button"]'
         )
       ) as HTMLElement[];
 
@@ -259,7 +283,20 @@ export class FieldExtractor {
 
       // Filter by visibility and disabled state
       const filtered = candidates.filter((el) => {
-        if (!opts.includeHidden && !visible(el)) return false;
+        const tagName = el.tagName.toLowerCase();
+
+        // Skip Bootstrap Select option <a> elements inside the dropdown menu.
+        // These are visual option rows; the real form control is the underlying <select>.
+        if (tagName === 'a' && el.closest('.bootstrap-select')) {
+          return false;
+        }
+
+        // Treat hidden <select> inside .bootstrap-select as visible,
+        // so we can extract canonical options from the original <select>.
+        const isBootstrapSelect =
+          tagName === 'select' && !!el.closest('.bootstrap-select');
+
+        if (!opts.includeHidden && !visible(el) && !isBootstrapSelect) return false;
         if (!opts.includeDisabled && el.hasAttribute('disabled')) return false;
         return true;
       });
@@ -322,6 +359,7 @@ export class FieldExtractor {
 
       // Helper to get label text (browser-side)
       const getLabelTextBrowser = (element: HTMLElement): string | null => {
+        // Strategy 1: label[for="id"]
         if (element.id) {
           const label = document.querySelector(`label[for="${element.id}"]`);
           if (label) {
@@ -330,12 +368,14 @@ export class FieldExtractor {
           }
         }
 
+        // Strategy 2: Parent label element
         const parentLabel = element.closest('label');
         if (parentLabel) {
           const text = parentLabel.textContent?.trim();
           if (text) return text;
         }
 
+        // Strategy 3: Previous sibling label
         let sibling = element.previousElementSibling;
         while (sibling) {
           if (sibling.tagName === 'LABEL') {
@@ -345,12 +385,35 @@ export class FieldExtractor {
           sibling = sibling.previousElementSibling;
         }
 
+        // Strategy 4: Next sibling label
         const nextSibling = element.nextElementSibling;
         if (nextSibling && nextSibling.tagName === 'LABEL') {
           const text = nextSibling.textContent?.trim();
           if (text && text.length < 50) return text;
         }
 
+        // Strategy 5: Closest ancestor "form-group" label (handles label + div + select)
+        let ancestor: Element | null = element.parentElement;
+        let depth = 0;
+        const MAX_DEPTH = 5;
+        while (ancestor && depth < MAX_DEPTH) {
+          const ancestorClass = (ancestor as HTMLElement).className || '';
+          const isFormGroup =
+            typeof ancestorClass === 'string' &&
+            /form-group|form-field|field|form-row/i.test(ancestorClass);
+
+          if (isFormGroup) {
+            const labelInGroup = ancestor.querySelector('label');
+            if (labelInGroup) {
+              const text = labelInGroup.textContent?.trim();
+              if (text && text.length < 200) return text;
+            }
+          }
+          ancestor = ancestor.parentElement;
+          depth++;
+        }
+
+        // Strategy 6: aria-labelledby
         const ariaLabelledBy = element.getAttribute('aria-labelledby');
         if (ariaLabelledBy) {
           const labelEl = document.getElementById(ariaLabelledBy);
@@ -360,6 +423,7 @@ export class FieldExtractor {
           }
         }
 
+        // Strategy 7: fall back to element's own text (for CTA buttons/links)
         const selfText = element.textContent?.trim();
         if (selfText && selfText.length < 120) return selfText;
 
@@ -656,7 +720,7 @@ export class FieldExtractor {
 
       // Strategy 2: aria-labelledby
       if (candidate.ariaLabelledBy) {
-        const labelEl = this.page.locator(`#${candidate.ariaLabelledBy}`);
+        const labelEl = this.page.locator(this.buildIdSelector(candidate.ariaLabelledBy));
         const count = await labelEl.count();
         if (count > 0) {
           const text = await labelEl.first().textContent();
@@ -682,8 +746,9 @@ export class FieldExtractor {
     try {
       if (!candidate.id && !candidate.name) return [];
 
+      // Use safe ID selector
       const selector = candidate.id 
-        ? `#${candidate.id}`
+        ? this.buildIdSelector(candidate.id)
         : `[name="${candidate.name}"]`;
 
       const select = this.page.locator(selector).first();
@@ -704,14 +769,32 @@ export class FieldExtractor {
   }
 
   /**
+   * Build safe CSS selector for an ID
+   * Uses attribute selector [id="..."] for IDs with special characters
+   * Uses standard #id selector for safe IDs
+   */
+  private buildIdSelector(id: string): string {
+    // Check if ID contains characters that need escaping
+    // CSS identifiers can contain: letters, digits, hyphens, underscores
+    // Special characters like /, space, etc. need to be in attribute selector
+    if (/[!"#$%&'()*+,.\/:;<=>?@[\\\]^`{|}~ ]/.test(id)) {
+      // Use attribute selector for IDs with special characters
+      // Escape quotes in the ID value
+      return `[id="${id.replace(/"/g, '\\"')}"]`;
+    }
+    // Use standard ID selector for safe IDs
+    return `#${id}`;
+  }
+
+  /**
    * Build selector candidates in priority order
    */
   private buildSelectorCandidates(candidate: RawFieldCandidate): string[] {
     const candidates: string[] = [];
 
-    // Tier 1: #id
+    // Tier 1: #id (use attribute selector if ID contains special characters)
     if (candidate.id) {
-      candidates.push(`#${candidate.id}`);
+      candidates.push(this.buildIdSelector(candidate.id));
     }
 
     // Tier 2: form scoped [name="..."]
@@ -892,7 +975,7 @@ export class FieldExtractor {
   private async getOtpContainerKey(candidate: RawFieldCandidate): Promise<string> {
     try {
       if (candidate.id) {
-        const element = await this.page.locator(`#${candidate.id}`).first();
+        const element = await this.page.locator(this.buildIdSelector(candidate.id)).first();
         if (await element.count() > 0) {
           // Find nearest container with class/id
           const container = await element.locator('xpath=ancestor::*[@class or @id][1]').first();

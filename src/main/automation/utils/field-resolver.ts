@@ -23,6 +23,52 @@ export class FieldResolver {
   constructor(private page: Page) {}
 
   /**
+   * Build a list of accessible name variants for robust role-based matching.
+   * - Strips required markers like * and trailing punctuation
+   * - Normalizes whitespace
+   * - Adds a relaxed RegExp variant (e.g. /^Email Address/i)
+   */
+  private buildAccessibleNameVariants(accessibleName: string): Array<string | RegExp> {
+    const variants: Array<string | RegExp> = [];
+    if (!accessibleName) return variants;
+
+    const original = accessibleName;
+
+    // Normalize whitespace
+    const normalized = original.replace(/\s+/g, ' ').trim();
+
+    // Strip common required markers (*, :, trailing spaces)
+    const stripped = normalized.replace(/[*:]+$/g, '').trim();
+
+    // Base string variants (most specific to least)
+    const seen = new Set<string>();
+    const pushString = (v: string) => {
+      const key = v.trim();
+      if (!key) return;
+      if (seen.has(key)) return;
+      seen.add(key);
+      variants.push(key);
+    };
+
+    pushString(normalized);
+    if (stripped !== normalized) {
+      pushString(stripped);
+    }
+
+    // Relaxed regex variant: starts with stripped text, case-insensitive
+    if (stripped) {
+      try {
+        const escaped = stripped.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        variants.push(new RegExp(`^${escaped}`, 'i'));
+      } catch {
+        // Ignore regex construction errors
+      }
+    }
+
+    return variants;
+  }
+
+  /**
    * Resolve a canonical field to a Playwright locator using semantic discovery
    * Returns the first working locator found, or null if all strategies fail
    * 
@@ -40,18 +86,26 @@ export class FieldResolver {
     // ============================================
     // Most reliable for SPAs - uses ARIA role and accessible name
     if (field.role && field.accessibleName) {
-      try {
-        const locator = this.page.getByRole(field.role as any, { 
-          name: field.accessibleName, 
-          exact: false 
-        });
-        const count = await locator.count();
-        if (count > 0) {
-          logger.debug(`[PRIMARY] Resolved field "${field.accessibleName}" via getByRole(${field.role})`);
-          return { locator, strategy: `getByRole(${field.role}, "${field.accessibleName}")` };
+      const nameVariants = this.buildAccessibleNameVariants(field.accessibleName);
+      for (const nameVariant of nameVariants) {
+        try {
+          const locator = this.page.getByRole(field.role as any, { 
+            name: nameVariant as any, 
+            exact: typeof nameVariant === 'string' ? false : undefined
+          });
+          const count = await locator.count();
+          if (count > 0) {
+            logger.debug(
+              `[PRIMARY] Resolved field "${field.accessibleName}" via getByRole(${field.role}, ${String(nameVariant)})`
+            );
+            return { locator, strategy: `getByRole(${field.role}, ${String(nameVariant)})` };
+          }
+        } catch (error) {
+          logger.debug(
+            `[PRIMARY] getByRole failed for ${field.accessibleName} with name=${String(nameVariant)}:`,
+            error
+          );
         }
-      } catch (error) {
-        logger.debug(`[PRIMARY] getByRole failed for ${field.accessibleName}:`, error);
       }
     }
 
@@ -77,12 +131,36 @@ export class FieldResolver {
     // ============================================
     // Placeholder text matching - common for inputs without explicit labels
     if (field.labels.placeholder) {
+      const placeholder = field.labels.placeholder;
       try {
-        const locator = this.page.getByPlaceholder(field.labels.placeholder, { exact: false });
-        const count = await locator.count();
-        if (count > 0) {
-          logger.debug(`[PRIMARY] Resolved field "${field.accessibleName}" via getByPlaceholder`);
-          return { locator, strategy: `getByPlaceholder("${field.labels.placeholder}")` };
+        const placeholderLocator = this.page.getByPlaceholder(placeholder, { exact: false });
+        const count = await placeholderLocator.count();
+
+        if (count === 1) {
+          logger.debug(
+            `[PRIMARY] Resolved field "${field.accessibleName}" via getByPlaceholder (unique match)`
+          );
+          return { locator: placeholderLocator, strategy: `getByPlaceholder("${placeholder}")` };
+        }
+
+        // If multiple elements share the same placeholder, refine using canonical fallback selector
+        if (count > 1 && field.fallback.selector) {
+          const fallbackLocator = this.page.locator(field.fallback.selector);
+          const fallbackCount = await fallbackLocator.count();
+          if (fallbackCount === 1) {
+            logger.debug(
+              `[PRIMARY] Resolved field "${field.accessibleName}" via getByPlaceholder+fallback ` +
+              `(placeholder="${placeholder}", selector="${field.fallback.selector}")`
+            );
+            return {
+              locator: fallbackLocator,
+              strategy: `getByPlaceholder+fallback("${placeholder}", "${field.fallback.selector}")`,
+            };
+          }
+          logger.debug(
+            `[PRIMARY] getByPlaceholder ambiguous (${count} matches) and fallback selector ` +
+            `"${field.fallback.selector}" matched ${fallbackCount} elements for "${field.accessibleName}"`
+          );
         }
       } catch (error) {
         logger.debug(`[PRIMARY] getByPlaceholder failed for ${field.accessibleName}:`, error);
@@ -142,15 +220,26 @@ export class FieldResolver {
     // ============================================
     // Text content matching - primarily for interactive elements like buttons and links
     if (field.tag === 'button' || field.tag === 'a') {
-      try {
-        const locator = this.page.getByText(field.accessibleName, { exact: false });
-        const count = await locator.count();
-        if (count > 0) {
-          logger.debug(`[PRIMARY] Resolved field "${field.accessibleName}" via getByText`);
-          return { locator, strategy: `getByText("${field.accessibleName}")` };
+      const nameVariants = this.buildAccessibleNameVariants(field.accessibleName);
+      for (const nameVariant of nameVariants) {
+        if (typeof nameVariant === 'string' && !nameVariant) continue;
+        try {
+          const locator = this.page.getByText(nameVariant as any, {
+            exact: typeof nameVariant === 'string' ? false : undefined,
+          });
+          const count = await locator.count();
+          if (count > 0) {
+            logger.debug(
+              `[PRIMARY] Resolved field "${field.accessibleName}" via getByText(${String(nameVariant)})`
+            );
+            return { locator, strategy: `getByText(${String(nameVariant)})` };
+          }
+        } catch (error) {
+          logger.debug(
+            `[PRIMARY] getByText failed for ${field.accessibleName} with name=${String(nameVariant)}:`,
+            error
+          );
         }
-      } catch (error) {
-        logger.debug(`[PRIMARY] getByText failed for ${field.accessibleName}:`, error);
       }
     }
 

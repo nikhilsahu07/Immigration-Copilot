@@ -4,9 +4,9 @@ export function getAIConfig(apiKey: string, model: string): GeminiConfig {
   return {
     apiKey,
     model,
-    temperature: 0.3,
+    temperature: 0.2,
     topP: 0.8,
-    maxOutputTokens: 16384, // Increased to handle large form responses
+    maxOutputTokens: 32768,
   };
 }
 
