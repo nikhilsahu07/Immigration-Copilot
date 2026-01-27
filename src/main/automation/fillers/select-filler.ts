@@ -54,9 +54,10 @@ export class SelectFiller extends BaseFiller {
 
   /**
    * Strategy 1: Native Playwright selectOption (using semantic locator)
+   * Handles both native <select> elements and Bootstrap Select hidden selects
    */
   protected async tryNativeFill(field: AutomatedField): Promise<FillResult> {
-    const locator = this.getLocator(field);
+    let locator = this.getLocator(field);
     if (!locator) {
       return {
         success: false,
@@ -69,6 +70,27 @@ export class SelectFiller extends BaseFiller {
     
     try {
       await this.scrollToLocator(locator);
+      
+      // Check if this is a Bootstrap Select button - if so, find the hidden select
+      const tagName = await locator.evaluate((el: Element) => el.tagName);
+      if (tagName === 'BUTTON') {
+        const dataId = await locator.getAttribute('data-id');
+        if (dataId) {
+          // Find the hidden select element by its ID
+          const selectLocator = this.page.locator(`select[id="${dataId}"]`);
+          const selectCount = await selectLocator.count();
+          if (selectCount === 1) {
+            locator = selectLocator;
+          } else {
+            return {
+              success: false,
+              strategy: FillStrategy.NATIVE,
+              error: `Bootstrap Select: hidden select with id="${dataId}" not found`,
+              domSnapshot: await this.captureDOMSnapshot(locator),
+            };
+          }
+        }
+      }
       
       // Try by value first
       try {
@@ -112,6 +134,7 @@ export class SelectFiller extends BaseFiller {
 
   /**
    * Strategy 2: Direct DOM manipulation with partial matching (using semantic locator)
+   * Handles both native <select> elements and Bootstrap Select trigger buttons
    */
   protected async tryDomFill(field: AutomatedField): Promise<FillResult> {
     const locator = this.getLocator(field);
@@ -127,8 +150,23 @@ export class SelectFiller extends BaseFiller {
 
     try {
       const success = await locator.evaluate((el: Element, searchValue: string) => {
-        const selectEl = el as HTMLSelectElement;
-        if (!selectEl) return false;
+        // Check if this is a native <select> or a Bootstrap Select button
+        let selectEl: HTMLSelectElement | null = null;
+        
+        if (el.tagName === 'SELECT') {
+          selectEl = el as HTMLSelectElement;
+        } else if (el.tagName === 'BUTTON' && el.getAttribute('data-id')) {
+          // Bootstrap Select: button has data-id pointing to the hidden select's id
+          const selectId = el.getAttribute('data-id');
+          if (selectId) {
+            // The select element ID might have dots, so use attribute selector
+            selectEl = document.querySelector(`select[id="${selectId}"]`) as HTMLSelectElement;
+          }
+        }
+        
+        if (!selectEl || !selectEl.options) {
+          return false;
+        }
         
         // Find option that contains the value (case-insensitive)
         const searchLower = searchValue.toLowerCase();
@@ -202,10 +240,98 @@ export class SelectFiller extends BaseFiller {
           break;
           
         case UILibrary.BOOTSTRAP: {
-          // Bootstrap-select: click trigger, find option in menu
+          // Bootstrap-select: click trigger button, then handle dropdown
           await locator.click();
-          await this.page.waitForSelector('.dropdown-menu', { state: 'visible', timeout: 2000 });
-          await this.page.click(`.dropdown-menu >> text="${displayText}"`);
+          await this.page.waitForTimeout(400); // Wait for dropdown animation
+          
+          // Get the dropdown menu ID from aria-owns attribute
+          const ariaOwns = await locator.getAttribute('aria-owns');
+          let dropdownMenuSelector = '.dropdown-menu.show, .inner.show';
+          
+          if (ariaOwns) {
+            // Bootstrap Select uses aria-owns to link button to its dropdown
+            dropdownMenuSelector = `#${ariaOwns}, .dropdown-menu.show`;
+          }
+          
+          // Check if dropdown menu is visible
+          let dropdownVisible = false;
+          try {
+            dropdownVisible = await this.page.locator(dropdownMenuSelector).first().isVisible({ timeout: 500 });
+          } catch {
+            dropdownVisible = false;
+          }
+          
+          if (!dropdownVisible) {
+            // Try opening via keyboard
+            await this.page.keyboard.press('ArrowDown');
+            await this.page.waitForTimeout(300);
+          }
+          
+          // Bootstrap-select has a searchbox - try typing there first
+          const searchBox = this.page.locator('.bs-searchbox input:visible, .dropdown-menu.show input[type="search"]:visible');
+          let hasSearchBox = false;
+          try {
+            hasSearchBox = await searchBox.count() > 0;
+          } catch {
+            hasSearchBox = false;
+          }
+          
+          if (hasSearchBox) {
+            // Type in search box to filter
+            await searchBox.first().fill(displayText);
+            await this.page.waitForTimeout(400);
+            
+            // Click the first matching result (active item or highlighted)
+            const activeOptions = [
+              '.dropdown-menu.show .dropdown-item.active',
+              '.dropdown-menu.show li.active a',
+              '.inner.show .active',
+              '.dropdown-menu.show .active'
+            ].join(', ');
+            
+            const option = this.page.locator(activeOptions);
+            if (await option.count() > 0) {
+              await option.first().click();
+            } else {
+              // Look for option by text in any visible dropdown
+              const textOption = this.page.locator(`.dropdown-menu.show >> text="${displayText}"`);
+              if (await textOption.count() > 0) {
+                await textOption.first().click();
+              } else {
+                // Try clicking in inner list
+                const innerOption = this.page.locator(`.inner.show >> text="${displayText}"`);
+                if (await innerOption.count() > 0) {
+                  await innerOption.first().click();
+                } else {
+                  return {
+                    success: false,
+                    strategy: FillStrategy.UI_LIBRARY,
+                    uiLibrary: library,
+                    error: `No option matching "${displayText}" found in Bootstrap Select`,
+                  };
+                }
+              }
+            }
+          } else {
+            // No search box - click option directly by text
+            const textOption = this.page.locator(`.dropdown-menu.show >> text="${displayText}"`);
+            if (await textOption.count() > 0) {
+              await textOption.first().click();
+            } else {
+              // Try inner list
+              const innerOption = this.page.locator(`.inner.show >> text="${displayText}"`);
+              if (await innerOption.count() > 0) {
+                await innerOption.first().click();
+              } else {
+                return {
+                  success: false,
+                  strategy: FillStrategy.UI_LIBRARY,
+                  uiLibrary: library,
+                  error: `No option matching "${displayText}" found in Bootstrap Select`,
+                };
+              }
+            }
+          }
           break;
         }
           
@@ -338,6 +464,7 @@ export class SelectFiller extends BaseFiller {
 
   /**
    * Verification: Check selected option (using semantic locator)
+   * Handles both native <select> elements and Bootstrap Select buttons
    */
   protected async verifyFill(field: AutomatedField): Promise<VerificationResult> {
     const locator = this.getLocator(field);
@@ -352,9 +479,34 @@ export class SelectFiller extends BaseFiller {
 
     try {
       const actual = await locator.evaluate((el: Element) => {
-        const selectEl = el as HTMLSelectElement;
-        if (!selectEl) return null;
-        return selectEl.options[selectEl.selectedIndex]?.text || selectEl.value;
+        // Handle native <select> element
+        if (el.tagName === 'SELECT') {
+          const selectEl = el as HTMLSelectElement;
+          return selectEl.options[selectEl.selectedIndex]?.text || selectEl.value;
+        }
+        
+        // Handle Bootstrap Select button - the button text shows the selected value
+        if (el.tagName === 'BUTTON') {
+          // First check if there's a visible text in the button (not placeholder)
+          const filterOption = el.querySelector('.filter-option-inner-inner');
+          if (filterOption && filterOption.textContent) {
+            return filterOption.textContent.trim();
+          }
+          
+          // Try to get the selected value from the hidden select via data-id
+          const dataId = el.getAttribute('data-id');
+          if (dataId) {
+            const hiddenSelect = document.querySelector(`select[id="${dataId}"]`) as HTMLSelectElement;
+            if (hiddenSelect && hiddenSelect.selectedIndex >= 0) {
+              return hiddenSelect.options[hiddenSelect.selectedIndex]?.text || hiddenSelect.value;
+            }
+          }
+          
+          // Fallback to button text content
+          return el.textContent?.trim() || '';
+        }
+        
+        return null;
       });
       
       const { raw, valueForSelect, displayText } = this.resolveExpected(field);

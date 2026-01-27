@@ -228,10 +228,18 @@ export abstract class BaseFiller {
           return UILibrary.MATERIAL_UI;
         }
 
-        // Bootstrap
+        // Bootstrap / Bootstrap Select
         if (el.classList.contains('selectpicker') ||
             el.classList.contains('select2') ||
-            el.closest('.bootstrap-select')) {
+            el.closest('.bootstrap-select') ||
+            // Bootstrap Select: button with dropdown-toggle class and data-id attribute
+            (el.tagName === 'BUTTON' && 
+             el.classList.contains('dropdown-toggle') &&
+             el.hasAttribute('data-id')) ||
+            // Bootstrap 5 style: button triggers with data-bs-toggle
+            (el.tagName === 'BUTTON' && 
+             el.getAttribute('data-bs-toggle') === 'dropdown' &&
+             el.getAttribute('role') === 'combobox')) {
           return UILibrary.BOOTSTRAP;
         }
 

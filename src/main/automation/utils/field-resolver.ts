@@ -69,22 +69,41 @@ export class FieldResolver {
   }
 
   /**
+   * Check if a selector matches exactly one element on the page
+   */
+  private async isUniqueSelector(selector: string): Promise<boolean> {
+    try {
+      const count = await this.page.locator(selector).count();
+      return count === 1;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Resolve a canonical field to a Playwright locator using semantic discovery
    * Returns the first working locator found, or null if all strategies fail
    * 
    * STRATEGY ORDER (semantic-first, selector-last):
-   * 1. getByRole + accessibleName (PRIMARY)
-   * 2. getByLabel (PRIMARY)
+   * 1. getByRole + accessibleName (PRIMARY) - with early fallback on ambiguity
+   * 2. getByLabel (PRIMARY) - with early fallback on ambiguity
    * 3. getByPlaceholder (PRIMARY)
    * 4. Relative text → input (PRIMARY - find input near label)
    * 5. getByText for buttons/links (PRIMARY)
-   * 6. FALLBACK: selector (LAST RESORT - explicitly marked as fallback)
+   * 6. FALLBACK: selector (used when semantic strategies are ambiguous or fail)
    */
   async resolveField(field: CanonicalField): Promise<{ locator: any; strategy: string } | null> {
+    // Pre-check: Does the fallback selector exist and is it unique?
+    // This enables early fallback when semantic lookups are ambiguous
+    const hasUniqueFallback = field.fallback.selector 
+      ? await this.isUniqueSelector(field.fallback.selector) 
+      : false;
+
     // ============================================
     // PRIMARY STRATEGY 1: getByRole + accessibleName
     // ============================================
     // Most reliable for SPAs - uses ARIA role and accessible name
+    // ENHANCEMENT: If multiple elements match and we have a unique fallback, use fallback immediately
     if (field.role && field.accessibleName) {
       const nameVariants = this.buildAccessibleNameVariants(field.accessibleName);
       for (const nameVariant of nameVariants) {
@@ -94,11 +113,28 @@ export class FieldResolver {
             exact: typeof nameVariant === 'string' ? false : undefined
           });
           const count = await locator.count();
-          if (count > 0) {
+          
+          if (count === 1) {
+            // Unique match - use it
             logger.debug(
               `[PRIMARY] Resolved field "${field.accessibleName}" via getByRole(${field.role}, ${String(nameVariant)})`
             );
             return { locator, strategy: `getByRole(${field.role}, ${String(nameVariant)})` };
+          } else if (count > 1 && hasUniqueFallback) {
+            // Multiple matches but we have a unique fallback - use fallback immediately
+            // This prevents strict mode violations when forms have duplicate accessible names
+            logger.warn(
+              `[FALLBACK-EARLY] getByRole matched ${count} elements for "${field.accessibleName}", ` +
+              `using unique fallback selector: ${field.fallback.selector}`
+            );
+            const fallbackLocator = this.page.locator(field.fallback.selector!);
+            return { locator: fallbackLocator, strategy: `FALLBACK-EARLY:selector("${field.fallback.selector}")` };
+          } else if (count > 1) {
+            // Multiple matches and no unique fallback - log and continue to next strategy
+            logger.debug(
+              `[PRIMARY] getByRole matched ${count} elements for "${field.accessibleName}", ` +
+              `no unique fallback available, trying next strategy`
+            );
           }
         } catch (error) {
           logger.debug(
@@ -113,13 +149,28 @@ export class FieldResolver {
     // PRIMARY STRATEGY 2: getByLabel
     // ============================================
     // Semantic label association - works with <label for="id"> or wrapping labels
+    // ENHANCEMENT: If multiple elements match and we have a unique fallback, use fallback immediately
     if (field.labels.labelText) {
       try {
         const locator = this.page.getByLabel(field.labels.labelText, { exact: false });
         const count = await locator.count();
-        if (count > 0) {
+        
+        if (count === 1) {
           logger.debug(`[PRIMARY] Resolved field "${field.accessibleName}" via getByLabel`);
           return { locator, strategy: `getByLabel("${field.labels.labelText}")` };
+        } else if (count > 1 && hasUniqueFallback) {
+          // Multiple matches - use fallback immediately
+          logger.warn(
+            `[FALLBACK-EARLY] getByLabel matched ${count} elements for "${field.accessibleName}", ` +
+            `using unique fallback selector: ${field.fallback.selector}`
+          );
+          const fallbackLocator = this.page.locator(field.fallback.selector!);
+          return { locator: fallbackLocator, strategy: `FALLBACK-EARLY:selector("${field.fallback.selector}")` };
+        } else if (count > 1) {
+          logger.debug(
+            `[PRIMARY] getByLabel matched ${count} elements for "${field.accessibleName}", ` +
+            `no unique fallback available, trying next strategy`
+          );
         }
       } catch (error) {
         logger.debug(`[PRIMARY] getByLabel failed for ${field.accessibleName}:`, error);
