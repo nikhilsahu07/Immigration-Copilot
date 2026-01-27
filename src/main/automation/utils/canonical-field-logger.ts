@@ -62,6 +62,58 @@ export function filterFormFields(fields: CanonicalField[]): CanonicalField[] {
 }
 
 /**
+ * Keywords that typically indicate large, domain-style enumerations
+ * where the full option list is not needed in the AI prompt.
+ */
+const LARGE_DOMAIN_KEYWORDS = [
+  'country',
+  'nationality',
+  'citizenship',
+  'state',
+  'province',
+  'city',
+  'district',
+  'university',
+  'college',
+  'school',
+  'company',
+  'employer',
+];
+
+/**
+ * Detect whether a field's options represent a large, domain-style list
+ * (e.g., countries, universities, companies) where we should truncate options
+ * in the AI prompt to save tokens.
+ */
+function shouldTruncateOptions(field: CanonicalField, minLength: number = 15): boolean {
+  if (!field.options || field.options.length <= minLength) {
+    return false;
+  }
+
+  const textParts: string[] = [];
+  if (field.accessibleName) textParts.push(field.accessibleName);
+  if (field.labels.labelText) textParts.push(field.labels.labelText);
+  if (field.labels.placeholder) textParts.push(field.labels.placeholder);
+  if (field.context.sectionHeading) textParts.push(field.context.sectionHeading);
+
+  const haystack = textParts.join(' ').toLowerCase();
+  if (!haystack) {
+    return false;
+  }
+
+  return LARGE_DOMAIN_KEYWORDS.some(keyword => haystack.includes(keyword));
+}
+
+interface MinimalFieldOptions {
+  /**
+   * When true, large domain option lists (countries, universities, etc.)
+   * are truncated to a small sample for the AI prompt to reduce token usage.
+   * CanonicalField.options remains untouched elsewhere.
+   */
+  truncateLargeOptions?: boolean;
+}
+
+/**
  * Create minimal canonical field structure optimized for Gemini AI
  * Removes null/empty fields and irrelevant data to reduce token count and hallucination
  * 
@@ -73,7 +125,7 @@ export function filterFormFields(fields: CanonicalField[]): CanonicalField[] {
  * - role: ARIA role for semantic matching (if available)
  * - labels: Only non-null label sources (labelText, placeholder, ariaLabel)
  * - state.required: For constraints (only if true)
- * - options: Only if select/radio has options
+ * - options: Only if select/radio has options (may be truncated for large domains)
  * - context.positionInForm: For field preference rule (only if formIndex > 0)
  * 
  * WHAT WE REMOVE:
@@ -84,7 +136,10 @@ export function filterFormFields(fields: CanonicalField[]): CanonicalField[] {
  * - context.formIndex: 0, context.sectionHeading: null (not needed)
  * - fallback.selector: Mentioned as "reference only" in prompt
  */
-export function createMinimalCanonicalField(field: CanonicalField): any {
+export function createMinimalCanonicalField(
+  field: CanonicalField,
+  options?: MinimalFieldOptions,
+): any {
   const minimal: any = {
     fieldId: field.fieldId,
     tag: field.tag,
@@ -114,10 +169,25 @@ export function createMinimalCanonicalField(field: CanonicalField): any {
   // Only include options if present (needed for select/radio behavior detection)
   if (field.options.length > 0) {
     // Simplify options - only include value and label (selected/disabled not needed)
-    minimal.options = field.options.map(opt => ({
+    let simpleOptions = field.options.map(opt => ({
       value: opt.value,
       label: opt.label,
     }));
+
+    if (options?.truncateLargeOptions && shouldTruncateOptions(field)) {
+      const total = simpleOptions.length;
+      const sampleSize = 3;
+      simpleOptions = simpleOptions.slice(0, sampleSize);
+
+      minimal.options = simpleOptions;
+      minimal.optionsSummary = {
+        truncated: true,
+        totalOptions: total,
+        sampleSize,
+      };
+    } else {
+      minimal.options = simpleOptions;
+    }
   }
 
   // Only include context.positionInForm if formIndex > 0 (for field preference rule)
@@ -143,7 +213,7 @@ export function createCleanCanonicalFieldsLog(fields: CanonicalField[]): string 
   const formFields = filterFormFields(fields);
   
   // Create minimal structure
-  const minimalFields = formFields.map(createMinimalCanonicalField);
+  const minimalFields = formFields.map(field => createMinimalCanonicalField(field));
   
   return JSON.stringify(minimalFields, null, 2);
 }
@@ -151,14 +221,18 @@ export function createCleanCanonicalFieldsLog(fields: CanonicalField[]): string 
 /**
  * Create optimized minimal canonical fields for AI prompt
  * Removes all null/empty/irrelevant fields to reduce token count and hallucination
- * This is specifically optimized for Gemini AI analysis
+ * This is specifically optimized for Gemini AI analysis.
+ * For large domain option lists, only a small sample of options is included
+ * along with an optionsSummary to indicate truncation.
  */
 export function createCleanCanonicalFieldsForAI(fields: CanonicalField[]): string {
   // Filter to only form fields
   const formFields = filterFormFields(fields);
   
   // Create minimal structure optimized for AI
-  const minimalFields = formFields.map(createMinimalCanonicalField);
+  const minimalFields = formFields.map(field =>
+    createMinimalCanonicalField(field, { truncateLargeOptions: true }),
+  );
   
   // Use compact JSON (no pretty printing) to save tokens
   return JSON.stringify(minimalFields);

@@ -93,7 +93,9 @@ export class AIService {
           - "role" is the ARIA role (textbox, combobox, button, etc.) - helps with semantic matching
           - "labels" contains labelText, placeholder, or ariaLabel (for semantic matching)
           - "required" indicates if field is required (for constraints)
-          - "options" contains select/radio options (only present if field has options)
+          - "options" contains select/radio options (only present if field has options). For very large lists
+            (countries, universities, companies, etc.) only a SAMPLE of options may be shown; assume more
+            options are available in the UI when deciding expected values.
           - "positionInForm" helps disambiguate when multiple similar fields exist
 
           FIELD BEHAVIOR TYPES (CRITICAL - choose the most specific):
