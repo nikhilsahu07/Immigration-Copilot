@@ -202,6 +202,13 @@ export function createMinimalCanonicalField(
     minimal.sectionHeading = field.context.sectionHeading;
   }
 
+  // CRITICAL: For radio buttons, preserve the group.questionLabel so Gemini knows what the question is
+  // This is essential because radio buttons need context (e.g., "Is the applicant a citizen of more than one country?")
+  // not just the individual option label (e.g., "No")
+  if (field.controlType === 'radio' && field.group?.groupLabel) {
+    minimal.questionLabel = field.group.groupLabel;
+  }
+
   return minimal;
 }
 

@@ -1199,6 +1199,108 @@ export class FieldExtractor {
   }
 
   /**
+   * Get the question label for a radio group (the label that appears before the radio buttons)
+   * This is different from the individual radio option labels
+   */
+  private async getRadioGroupQuestionLabel(candidate: RawFieldCandidate): Promise<string | null> {
+    try {
+      // Strategy 1: Look for a label element that appears before the radio group in the DOM
+      // This handles cases where the question is in a separate <label> or <div> above the radios
+      if (candidate.id || candidate.name) {
+        const selector = candidate.id 
+          ? this.buildIdSelector(candidate.id)
+          : `input[type="radio"][name="${candidate.name}"]`;
+        
+        const questionLabel = await this.page.evaluate((opts: { selector: string }) => {
+          const radio = document.querySelector(opts.selector) as HTMLElement;
+          if (!radio) return null;
+
+          // Walk up the DOM tree to find a label/question above the radio group
+          let current: Element | null = radio.parentElement;
+          let depth = 0;
+          const MAX_DEPTH = 10;
+
+          while (current && depth < MAX_DEPTH) {
+            // Check previous siblings for label/question
+            let sibling = current.previousElementSibling;
+            while (sibling && depth < MAX_DEPTH) {
+              const tagName = sibling.tagName.toLowerCase();
+              
+              // Look for label elements
+              if (tagName === 'label') {
+                const text = sibling.textContent?.trim();
+                // Filter out labels that are just "Yes"/"No" (those are option labels)
+                if (text && text.length > 3 && !/^(yes|no)$/i.test(text)) {
+                  // Remove common suffixes like asterisks and "required" text
+                  const cleanText = text.replace(/\s*\*+\s*$/, '').replace(/\s*\(required\)\s*/i, '').trim();
+                  if (cleanText.length > 3) {
+                    return cleanText;
+                  }
+                }
+              }
+              
+              // Look for divs/rows that might contain the question label
+              if (['div', 'p', 'span'].includes(tagName)) {
+                const labelInDiv = sibling.querySelector('label');
+                if (labelInDiv) {
+                  const text = labelInDiv.textContent?.trim();
+                  if (text && text.length > 3 && !/^(yes|no)$/i.test(text)) {
+                    const cleanText = text.replace(/\s*\*+\s*$/, '').replace(/\s*\(required\)\s*/i, '').trim();
+                    if (cleanText.length > 3) {
+                      return cleanText;
+                    }
+                  }
+                }
+              }
+              
+              sibling = sibling.previousElementSibling;
+              depth++;
+            }
+            
+            // Check parent for label/question
+            current = current.parentElement;
+            depth++;
+          }
+          
+          return null;
+        }, { selector });
+
+        if (questionLabel) {
+          return questionLabel;
+        }
+      }
+
+      // Strategy 2: Check if there's a fieldset with a legend
+      if (candidate.name) {
+        const fieldsetLabel = await this.page.evaluate((name: string) => {
+          const radio = document.querySelector(`input[type="radio"][name="${name}"]`) as HTMLElement;
+          if (!radio) return null;
+          
+          const fieldset = radio.closest('fieldset');
+          if (fieldset) {
+            const legend = fieldset.querySelector('legend');
+            if (legend) {
+              const text = legend.textContent?.trim();
+              if (text && text.length > 3) {
+                return text.replace(/\s*\*+\s*$/, '').trim();
+              }
+            }
+          }
+          return null;
+        }, candidate.name);
+
+        if (fieldsetLabel) {
+          return fieldsetLabel;
+        }
+      }
+    } catch (error) {
+      automationPageLogger.warn(`Failed to extract radio group question label: ${error}`);
+    }
+
+    return null;
+  }
+
+  /**
    * Build canonical field for radio group
    */
   private async buildCanonicalRadioGroupField(
@@ -1206,7 +1308,14 @@ export class FieldExtractor {
     group: RawFieldCandidate[],
     index: number
   ): Promise<CanonicalField> {
-    const labelText = await this.getLabelText(candidate);
+    // For radio groups, we need the question label (e.g., "Is the applicant a citizen of more than one country?")
+    // not the individual option label (e.g., "No")
+    const questionLabel = await this.getRadioGroupQuestionLabel(candidate);
+    const individualLabelText = await this.getLabelText(candidate);
+    
+    // Use question label if available, otherwise fall back to individual label
+    const labelText = questionLabel || individualLabelText;
+    
     const accessibleName = computeAccessibleName({
       labelText,
       ariaLabel: candidate.ariaLabel,
@@ -1272,7 +1381,7 @@ export class FieldExtractor {
       },
       group: {
         groupName: candidate.name || null,
-        groupLabel: labelText || null,
+        groupLabel: questionLabel || labelText || null, // Store the question label, not individual option label
       },
       options: radioOptions.map(opt => ({
         value: opt.value || null,
