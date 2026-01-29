@@ -1,4 +1,3 @@
-
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/constants';
 import { automationService } from '../../services/automation.service';
@@ -12,11 +11,11 @@ export function registerAutomationHandlers(): void {
     try {
       const session = getCurrentSession();
       if (!session) throw new Error('Unauthorized');
-      
+
       const job = await automationService.start(
         session.companyId,
         session.agentId,
-        data
+        data,
       );
       return success(job);
     } catch (error) {
@@ -93,26 +92,54 @@ export function registerAutomationHandlers(): void {
   });
 
   // Approve Mapping / Proceed
-  ipcMain.handle(IPC_CHANNELS.AUTOMATION_APPROVE_MAPPING, async (_event, mapping) => {
+  ipcMain.handle(
+    IPC_CHANNELS.AUTOMATION_APPROVE_MAPPING,
+    async (_event, mapping) => {
+      try {
+        await automationService.approveMapping(mapping);
+        return success(undefined);
+      } catch (error) {
+        logger.error('Approve mapping error:', error);
+        return handleError(error);
+      }
+    },
+  );
+
+  // Execute specific action by index
+  ipcMain.handle(
+    IPC_CHANNELS.AUTOMATION_EXECUTE_ACTION,
+    async (_event, { actionIndex }) => {
+      try {
+        await automationService.executeAction(actionIndex);
+        return success(undefined);
+      } catch (error) {
+        logger.error('Execute action error:', error);
+        return handleError(error);
+      }
+    },
+  );
+
+  // Retry filling with stored data
+  ipcMain.handle(IPC_CHANNELS.AUTOMATION_RETRY_FILLING, async () => {
     try {
-      await automationService.approveMapping(mapping);
+      await automationService.retryFilling();
       return success(undefined);
     } catch (error) {
-      logger.error('Approve mapping error:', error);
+      logger.error('Retry filling error:', error);
       return handleError(error);
     }
   });
 
-  // Execute specific action by index
-  ipcMain.handle(IPC_CHANNELS.AUTOMATION_EXECUTE_ACTION, async (_event, { actionIndex }) => {
+  // Check if retry is available
+  ipcMain.handle(IPC_CHANNELS.AUTOMATION_CAN_RETRY, async () => {
     try {
-      await automationService.executeAction(actionIndex);
-      return success(undefined);
+      const canRetry = automationService.canRetryFilling();
+      return success(canRetry);
     } catch (error) {
-      logger.error('Execute action error:', error);
+      logger.error('Can retry check error:', error);
       return handleError(error);
     }
   });
-  
+
   logger.debug('Automation handlers registered');
 }

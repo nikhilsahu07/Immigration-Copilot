@@ -1,6 +1,6 @@
 /**
  * Page Processor
- * 
+ *
  * Orchestrates single-page workflow: field extraction, AI analysis,
  * and routing to appropriate handlers (dashboard or form).
  * Also manages checkpoint saving and resuming.
@@ -9,14 +9,14 @@
 import { Page } from 'playwright-core';
 import { PageManager } from '../../automation/page-manager';
 import { browserConnector } from '../../automation/browser-connector';
-import { 
-  automationJobRepository, 
-  documentRepository 
+import {
+  automationJobRepository,
+  documentRepository,
 } from '../../database/repositories';
-import { 
-  logger, 
-  rawHtmlContextLogger, 
-  automationCheckpointLogger 
+import {
+  logger,
+  rawHtmlContextLogger,
+  automationCheckpointLogger,
 } from '../../core/logger';
 import { createError } from '../../core/error-handler';
 import { ERROR_CODES } from '../../../shared/constants';
@@ -27,13 +27,13 @@ import { aiService } from '../ai.service';
 import { getConfig } from './automation.config';
 import { DashboardHandler } from './dashboard-handler';
 import { FormFillingCoordinator } from './form-filling-coordinator';
-import { 
-  AutomationJob, 
-  Client, 
-  Extraction, 
+import {
+  AutomationJob,
+  Client,
+  Extraction,
   AutomationCheckpoint,
   WorkflowStep,
-  BehaviorField
+  BehaviorField,
 } from '../../../shared/types';
 
 export type PageIterationResult =
@@ -51,6 +51,8 @@ export interface PageProcessorDependencies {
   setCurrentMapping: (mapping: any) => void;
   getCurrentMapping: () => any | null;
   getModeManager: () => { isAutoMode: () => boolean };
+  storeLastAiResult: (aiResult: any) => void;
+  storeLastCanonicalFields: (fields: any[]) => void;
 }
 
 export class PageProcessor {
@@ -67,7 +69,7 @@ export class PageProcessor {
     client: Client,
     extraction: Extraction,
     portalUrl: string,
-    customPrompt?: string
+    customPrompt?: string,
   ): Promise<PageIterationResult> {
     if (!this.deps.isRunning() || this.deps.isPaused()) {
       return { kind: 'page_done' };
@@ -96,7 +98,7 @@ export class PageProcessor {
         const pageUrl = page.url();
         if (job.currentUrl && pageUrl !== job.currentUrl) {
           logger.info(
-            `Page URL changed. Previous: ${job.currentUrl}, Current: ${pageUrl}. Processing new page.`
+            `Page URL changed. Previous: ${job.currentUrl}, Current: ${pageUrl}. Processing new page.`,
           );
           await automationJobRepository.updateCurrentUrl(job._id, pageUrl);
           job.currentUrl = pageUrl;
@@ -121,9 +123,11 @@ export class PageProcessor {
       const currentJob = this.deps.getCurrentJob();
       if (currentJob) {
         currentJob.currentUrl = currentUrl;
-        automationJobRepository.updateCurrentUrl(currentJob._id, currentUrl).catch(e => {
-          logger.warn('Failed to update currentUrl', e);
-        });
+        automationJobRepository
+          .updateCurrentUrl(currentJob._id, currentUrl)
+          .catch((e) => {
+            logger.warn('Failed to update currentUrl', e);
+          });
       }
 
       // 1. Extract structured form fields
@@ -134,6 +138,9 @@ export class PageProcessor {
       // Initialize canonical fields map
       const canonicalFieldsMap = this.deps.getCanonicalFieldsMap();
       canonicalFieldsMap.initialize(canonicalFields);
+
+      // Store for retry filling
+      this.deps.storeLastCanonicalFields(canonicalFields);
 
       await this.saveCheckpoint('fields_extracted', {
         currentUrl,
@@ -156,20 +163,31 @@ export class PageProcessor {
       }
 
       // 4. Fetch documents for context
-      const documents = await documentRepository.findByClient(client._id, job.companyId || '');
-      const documentList = documents.map(d => ({
+      const documents = await documentRepository.findByClient(
+        client._id,
+        job.companyId || '',
+      );
+      const documentList = documents.map((d) => ({
         name: d.originalName,
         category: d.documentType,
         s3Key: d.s3Key,
       }));
-      const documentLookup = new Map(documents.map(d => [d.originalName, d.s3Key]));
+      const documentLookup = new Map(
+        documents.map((d) => [d.originalName, d.s3Key]),
+      );
 
       // 5. Get API key and model
-      const { credentialRepository } = await import('../../database/repositories/credential.repository');
-      const activeCredential = await credentialRepository.findActive(job.companyId || '');
+      const { credentialRepository } =
+        await import('../../database/repositories/credential.repository');
+      const activeCredential = await credentialRepository.findActive(
+        job.companyId || '',
+      );
 
       if (!activeCredential) {
-        throw createError(ERROR_CODES.VALIDATION_ERROR, 'No active Gemini API key found.');
+        throw createError(
+          ERROR_CODES.VALIDATION_ERROR,
+          'No active Gemini API key found.',
+        );
       }
 
       const modelName = job.modelName || 'gemini-3-flash-preview';
@@ -183,7 +201,7 @@ export class PageProcessor {
         activeCredential.apiKey,
         modelName,
         customPrompt,
-        screenshotBase64
+        screenshotBase64,
       );
       EventEmitter.emitStatus(`Got AI response: ${aiResult.pageType} page`, 50);
 
@@ -194,20 +212,33 @@ export class PageProcessor {
         aiResult,
       });
 
-      logger.info(`Page classified as: ${aiResult.pageType} - ${aiResult.pageSummary}`);
+      // Store for retry filling
+      this.deps.storeLastAiResult(aiResult);
+
+      logger.info(
+        `Page classified as: ${aiResult.pageType} - ${aiResult.pageSummary}`,
+      );
 
       // Route based on page type
       if (aiResult.pageType === 'dashboard' || !aiResult.isFormPage) {
         return await this.handleDashboardPage(page, pageManager, aiResult);
       } else {
-        return await this.handleFormPage(page, pageManager, aiResult, documentLookup);
+        return await this.handleFormPage(
+          page,
+          pageManager,
+          aiResult,
+          documentLookup,
+        );
       }
     } catch (error: any) {
       logger.error('Page processing failed:', error);
       const errorMessage = ErrorParser.parseGeminiError(error);
       EventEmitter.emitError(errorMessage);
       EventEmitter.emitStatus('Error: ' + errorMessage.title, 0);
-      return { kind: 'job_failed', reason: errorMessage.message || errorMessage.title };
+      return {
+        kind: 'job_failed',
+        reason: errorMessage.message || errorMessage.title,
+      };
     }
   }
 
@@ -220,19 +251,24 @@ export class PageProcessor {
     extraction: Extraction,
     portalUrl: string,
     customPrompt: string | undefined,
-    checkpoint: AutomationCheckpoint
+    checkpoint: AutomationCheckpoint,
   ): Promise<PageIterationResult> {
     automationCheckpointLogger.info(
-      `Resuming job ${job._id} from checkpoint step=${checkpoint.step} at URL=${checkpoint.currentUrl}`
+      `Resuming job ${job._id} from checkpoint step=${checkpoint.step} at URL=${checkpoint.currentUrl}`,
     );
 
-    const portalDomain = new URL(checkpoint.currentUrl || portalUrl || 'http://localhost').hostname;
+    const portalDomain = new URL(
+      checkpoint.currentUrl || portalUrl || 'http://localhost',
+    ).hostname;
     let page: Page;
     try {
       page = await browserConnector.getPageByUrl(portalDomain);
     } catch {
       logger.warn(`Checkpoint resume: could not find page for ${portalDomain}`);
-      EventEmitter.emitStatus('Waiting for page load (checkpoint resume)...', 15);
+      EventEmitter.emitStatus(
+        'Waiting for page load (checkpoint resume)...',
+        15,
+      );
       return { kind: 'retry', delayMs: 100 };
     }
 
@@ -242,43 +278,72 @@ export class PageProcessor {
     // If URL changed, clear checkpoint and process fresh
     if (checkpoint.currentUrl && currentPageUrl !== checkpoint.currentUrl) {
       automationCheckpointLogger.warn(
-        `URL mismatch for job ${job._id}. Clearing checkpoint.`
+        `URL mismatch for job ${job._id}. Clearing checkpoint.`,
       );
       if (job._id) {
         await automationJobRepository.updateCurrentUrl(job._id, currentPageUrl);
         await automationJobRepository.clearCheckpoint(job._id);
       }
-      return this.executeWorkflowForCurrentPage(job, client, extraction, portalUrl, customPrompt);
+      return this.executeWorkflowForCurrentPage(
+        job,
+        client,
+        extraction,
+        portalUrl,
+        customPrompt,
+      );
     }
 
     // Handle ai_analysis_done checkpoint
     if (checkpoint.step === 'ai_analysis_done' && checkpoint.aiResult) {
-      automationCheckpointLogger.info(`Using cached AI result for job ${job._id}`);
+      automationCheckpointLogger.info(
+        `Using cached AI result for job ${job._id}`,
+      );
 
       // Initialize canonical fields from checkpoint
       if (checkpoint.canonicalFields) {
-        this.deps.getCanonicalFieldsMap().initialize(checkpoint.canonicalFields);
+        this.deps
+          .getCanonicalFieldsMap()
+          .initialize(checkpoint.canonicalFields);
       }
 
-      const documents = await documentRepository.findByClient(client._id, job.companyId || '');
-      const documentLookup = new Map(documents.map(d => [d.originalName, d.s3Key]));
+      const documents = await documentRepository.findByClient(
+        client._id,
+        job.companyId || '',
+      );
+      const documentLookup = new Map(
+        documents.map((d) => [d.originalName, d.s3Key]),
+      );
       const aiResult = checkpoint.aiResult;
 
       if (aiResult.pageType === 'dashboard' || !aiResult.isFormPage) {
         return await this.handleDashboardPage(page, pageManager, aiResult);
       } else {
-        return await this.handleFormPage(page, pageManager, aiResult, documentLookup);
+        return await this.handleFormPage(
+          page,
+          pageManager,
+          aiResult,
+          documentLookup,
+        );
       }
     }
 
     // Fall back to full workflow
-    return this.executeWorkflowForCurrentPage(job, client, extraction, portalUrl, customPrompt);
+    return this.executeWorkflowForCurrentPage(
+      job,
+      client,
+      extraction,
+      portalUrl,
+      customPrompt,
+    );
   }
 
   /**
    * Save checkpoint for current job
    */
-  async saveCheckpoint(step: WorkflowStep, data: Partial<AutomationCheckpoint>): Promise<void> {
+  async saveCheckpoint(
+    step: WorkflowStep,
+    data: Partial<AutomationCheckpoint>,
+  ): Promise<void> {
     const currentJob = this.deps.getCurrentJob();
     if (!currentJob?._id) return;
 
@@ -296,7 +361,7 @@ export class PageProcessor {
 
     await automationJobRepository.saveCheckpoint(currentJob._id, checkpoint);
     automationCheckpointLogger.info(
-      `Checkpoint saved for job ${currentJob._id} at step=${step}`
+      `Checkpoint saved for job ${currentJob._id} at step=${step}`,
     );
   }
 
@@ -306,12 +371,12 @@ export class PageProcessor {
     const config = getConfig();
     try {
       logger.info('Waiting for page load...');
-      await page.waitForLoadState('domcontentloaded', { 
-        timeout: config.pageLoad.domContentLoaded 
+      await page.waitForLoadState('domcontentloaded', {
+        timeout: config.pageLoad.domContentLoaded,
       });
       try {
-        await page.waitForLoadState('networkidle', { 
-          timeout: config.pageLoad.networkIdle 
+        await page.waitForLoadState('networkidle', {
+          timeout: config.pageLoad.networkIdle,
         });
       } catch {
         logger.debug('networkidle timeout');
@@ -320,20 +385,25 @@ export class PageProcessor {
       logger.info('Page load confirmed');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      logger.warn(`Page load wait timeout: ${errorMessage}. Proceeding anyway.`);
+      logger.warn(
+        `Page load wait timeout: ${errorMessage}. Proceeding anyway.`,
+      );
     }
   }
 
-  private async logRawHtml(pageManager: PageManager, currentUrl: string): Promise<void> {
+  private async logRawHtml(
+    pageManager: PageManager,
+    currentUrl: string,
+  ): Promise<void> {
     try {
       const rawHtml = await pageManager.getRawHtml();
       rawHtmlContextLogger.info(
         `--- RAW HTML CONTEXT ---\n` +
-        `TIMESTAMP: ${new Date().toISOString()}\n` +
-        `URL: ${currentUrl}\n` +
-        `Length: ${rawHtml.length} chars\n\n` +
-        `${rawHtml}\n` +
-        `------------------------\n`
+          `TIMESTAMP: ${new Date().toISOString()}\n` +
+          `URL: ${currentUrl}\n` +
+          `Length: ${rawHtml.length} chars\n\n` +
+          `${rawHtml}\n` +
+          `------------------------\n`,
       );
     } catch {
       // Logging failure should never break automation
@@ -343,17 +413,20 @@ export class PageProcessor {
   private async handleDashboardPage(
     page: Page,
     pageManager: PageManager,
-    aiResult: any
+    aiResult: any,
   ): Promise<PageIterationResult> {
     // Lazily initialize dashboard handler
     if (!this.dashboardHandler) {
       this.dashboardHandler = new DashboardHandler(
         page,
-        () => this.deps.getCurrentJob()?._id
+        () => this.deps.getCurrentJob()?._id,
       );
     }
 
-    const ok = await this.dashboardHandler.processDashboardPage(pageManager, aiResult);
+    const ok = await this.dashboardHandler.processDashboardPage(
+      pageManager,
+      aiResult,
+    );
     if (!ok) {
       logger.warn('Dashboard navigation failed');
       return { kind: 'job_failed', reason: 'Dashboard navigation failed' };
@@ -361,28 +434,57 @@ export class PageProcessor {
     return { kind: 'page_done' };
   }
 
+  /**
+   * Public method for retry filling - uses stored AI result
+   */
+  async retryFormFilling(
+    page: Page,
+    pageManager: PageManager,
+    aiResult: any,
+    documentLookup: Map<string, string>,
+  ): Promise<PageIterationResult> {
+    return await this.handleFormPage(
+      page,
+      pageManager,
+      aiResult,
+      documentLookup,
+    );
+  }
+
   private async handleFormPage(
     page: Page,
     pageManager: PageManager,
     aiResult: any,
-    documentLookup: Map<string, string>
+    documentLookup: Map<string, string>,
   ): Promise<PageIterationResult> {
     const canonicalFieldsMap = this.deps.getCanonicalFieldsMap();
 
     // Initialize form filling coordinator
     if (!this.formFillingCoordinator) {
-      this.formFillingCoordinator = new FormFillingCoordinator(page, canonicalFieldsMap);
+      this.formFillingCoordinator = new FormFillingCoordinator(
+        page,
+        canonicalFieldsMap,
+      );
     }
 
     const fields: BehaviorField[] = aiResult.fields || [];
     const isAutoMode = this.deps.getModeManager().isAutoMode();
 
     // Filter eligible fields
-    const eligibleFields = FormFillingCoordinator.filterEligibleFields(fields, isAutoMode);
+    const eligibleFields = FormFillingCoordinator.filterEligibleFields(
+      fields,
+      isAutoMode,
+    );
 
     if (eligibleFields.length > 0) {
-      EventEmitter.emitStatus(`Filling ${eligibleFields.length} field(s)...`, 60);
-      await this.formFillingCoordinator.fillFieldsSequentially(eligibleFields, documentLookup);
+      EventEmitter.emitStatus(
+        `Filling ${eligibleFields.length} field(s)...`,
+        60,
+      );
+      await this.formFillingCoordinator.fillFieldsSequentially(
+        eligibleFields,
+        documentLookup,
+      );
       EventEmitter.emitStatus('Fields filled', 70);
     }
 
@@ -394,7 +496,7 @@ export class PageProcessor {
       fields: fields,
       actions: aiResult.actions || [],
       captcha: aiResult.captcha,
-      otp: aiResult.otp
+      otp: aiResult.otp,
     };
     this.deps.setCurrentMapping(mapping);
     EventEmitter.emitMapping(mapping);
@@ -404,25 +506,30 @@ export class PageProcessor {
     if (isAutoMode && mapping.actions.length > 0) {
       logger.info('Auto mode: Auto-submitting form after filling fields');
       EventEmitter.emitStatus('Auto-submitting form...', 80);
-      
+
       // Import FormSubmissionHandler dynamically to avoid circular dependency
-      const { FormSubmissionHandler } = await import('./form-submission-handler');
+      const { FormSubmissionHandler } =
+        await import('./form-submission-handler');
       const formSubmissionHandler = new FormSubmissionHandler(
         () => this.deps.getCurrentJob(),
         () => this.deps.getCurrentMapping(),
-        (mapping) => { this.deps.setCurrentMapping(mapping); }
+        (mapping) => {
+          this.deps.setCurrentMapping(mapping);
+        },
       );
-      
+
       await formSubmissionHandler.approveMapping(mapping);
-      
+
       // After submission, wait a bit for navigation
       await page.waitForTimeout(1000);
-      
+
       // Check if URL changed (form was submitted)
       const newUrl = page.url();
       const currentJob = this.deps.getCurrentJob();
       if (currentJob && newUrl !== currentJob.currentUrl) {
-        logger.info(`Form submitted. URL changed from ${currentJob.currentUrl} to ${newUrl}`);
+        logger.info(
+          `Form submitted. URL changed from ${currentJob.currentUrl} to ${newUrl}`,
+        );
         await automationJobRepository.updateCurrentUrl(currentJob._id, newUrl);
         await automationJobRepository.clearCheckpoint(currentJob._id);
         this.deps.setCurrentMapping(null); // Clear mapping after submission

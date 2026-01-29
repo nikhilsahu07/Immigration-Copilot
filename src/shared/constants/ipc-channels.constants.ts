@@ -76,6 +76,8 @@ export const IPC_CHANNELS = {
   AUTOMATION_EXECUTE_ACTION: 'automation:execute-action',
   AUTOMATION_GET_STATE: 'automation:get-state',
   AUTOMATION_GET_HISTORY: 'automation:get-history',
+  AUTOMATION_RETRY_FILLING: 'automation:retry-filling',
+  AUTOMATION_CAN_RETRY: 'automation:can-retry',
 
   // BrowserView
   BROWSER_VIEW_LOAD: 'browser-view:load',
@@ -95,4 +97,4 @@ export const IPC_CHANNELS = {
   EVENT_ERROR: 'event:error',
 } as const;
 
-export type IPCChannel = typeof IPC_CHANNELS[keyof typeof IPC_CHANNELS];
+export type IPCChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

@@ -1,8 +1,41 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Play, Pause, Square, AlertTriangle, KeyRound, CheckCircle, Loader2, Globe, MessageSquare, FileText, Bot, Sparkles, ArrowRight, XCircle, Search, PlusCircle } from 'lucide-react';
-import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label, Progress, Textarea } from '../../components/ui';
-import { useAutomationStore, useClientStore, usePortalStore } from '../../stores';
+import {
+  Play,
+  Pause,
+  Square,
+  AlertTriangle,
+  KeyRound,
+  CheckCircle,
+  Loader2,
+  Globe,
+  MessageSquare,
+  FileText,
+  Bot,
+  Sparkles,
+  ArrowRight,
+  XCircle,
+  Search,
+  PlusCircle,
+  RotateCcw,
+} from 'lucide-react';
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  CardDescription,
+  Input,
+  Label,
+  Progress,
+  Textarea,
+} from '../../components/ui';
+import {
+  useAutomationStore,
+  useClientStore,
+  usePortalStore,
+} from '../../stores';
 import { api, ChatMessage } from '../../lib/api';
 import type { Extraction } from '../../../shared/types';
 
@@ -23,6 +56,7 @@ export function AutomationPage() {
     customPrompt,
     browserViewShown,
     attachScreenshots,
+    canRetryFilling,
     startAutomation,
     stopAutomation,
     pauseAutomation,
@@ -39,13 +73,16 @@ export function AutomationPage() {
     setCustomPrompt,
     setBrowserViewShown,
     setAttachScreenshots,
+    retryFilling,
+    checkRetryAvailability,
   } = useAutomationStore();
 
   const { clients, fetchClients, isLoading: clientsLoading } = useClientStore();
   const { portals, fetchPortals, isLoading: portalsLoading } = usePortalStore();
 
   const [otpCode, setOtpCode] = useState('');
-  const [approvedExtraction, setApprovedExtraction] = useState<Extraction | null>(null);
+  const [approvedExtraction, setApprovedExtraction] =
+    useState<Extraction | null>(null);
   const [loadingExtraction, setLoadingExtraction] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
@@ -56,6 +93,13 @@ export function AutomationPage() {
     fetchClients();
     fetchPortals();
   }, []);
+
+  // Check retry availability periodically
+  useEffect(() => {
+    checkRetryAvailability();
+    const interval = setInterval(checkRetryAvailability, 2000);
+    return () => clearInterval(interval);
+  }, [checkRetryAvailability]);
 
   // When client is selected, check for approved extraction and load chats
   useEffect(() => {
@@ -87,7 +131,7 @@ export function AutomationPage() {
   // IMPORTANT: Don't reload URL when automation is running - preserve current page state
   useEffect(() => {
     if (selectedPortal) {
-      const portal = portals.find(p => p._id === selectedPortal);
+      const portal = portals.find((p) => p._id === selectedPortal);
       if (portal) {
         // Only load URL if automation is NOT running
         // If automation is running, the page state should be preserved
@@ -107,20 +151,41 @@ export function AutomationPage() {
         });
       }
     }
-  }, [selectedPortal, portals, browserViewShown, isRunning, loadUrl, hidePreview, setBrowserViewShown]);
+  }, [
+    selectedPortal,
+    portals,
+    browserViewShown,
+    isRunning,
+    loadUrl,
+    hidePreview,
+    setBrowserViewShown,
+  ]);
 
   // Restore browser view when returning to page if portal was selected
   const location = useLocation();
   useEffect(() => {
     // Only restore if we're on the automation page and have a selected portal
-    if (location.pathname === '/automation' && selectedPortal && !browserViewShown && !isRunning) {
-      const portal = portals.find(p => p._id === selectedPortal);
+    if (
+      location.pathname === '/automation' &&
+      selectedPortal &&
+      !browserViewShown &&
+      !isRunning
+    ) {
+      const portal = portals.find((p) => p._id === selectedPortal);
       if (portal) {
         loadUrl(portal.url);
         setBrowserViewShown(true);
       }
     }
-  }, [location.pathname, selectedPortal, browserViewShown, isRunning, portals, loadUrl, setBrowserViewShown]);
+  }, [
+    location.pathname,
+    selectedPortal,
+    browserViewShown,
+    isRunning,
+    portals,
+    loadUrl,
+    setBrowserViewShown,
+  ]);
 
   // Ensure BrowserView is shown when automation starts
   useEffect(() => {
@@ -150,7 +215,7 @@ export function AutomationPage() {
     try {
       const result = await api.extraction.list({ clientId });
       if (result.success && result.data) {
-        const approved = result.data.find(e => e.status === 'approved');
+        const approved = result.data.find((e) => e.status === 'approved');
         setApprovedExtraction(approved || null);
       }
     } catch (err) {
@@ -161,11 +226,11 @@ export function AutomationPage() {
   };
 
   // Get clients with approved extractions only
-  const eligibleClients = clients.filter(c => c.hasApprovedExtraction);
+  const eligibleClients = clients.filter((c) => c.hasApprovedExtraction);
 
   const handleStart = async () => {
     if (!selectedClient || !selectedPortal || !approvedExtraction) return;
-    
+
     await startAutomation({
       clientId: selectedClient,
       portalId: selectedPortal,
@@ -209,7 +274,10 @@ export function AutomationPage() {
 
   // Get status icon based on message
   const getStatusIcon = () => {
-    if (statusMessage.includes('Loading') || statusMessage.includes('Downloading')) {
+    if (
+      statusMessage.includes('Loading') ||
+      statusMessage.includes('Downloading')
+    ) {
       return <Globe className="w-5 h-5 text-blue-500 animate-pulse" />;
     }
     if (statusMessage.includes('Processing') || statusMessage.includes('AI')) {
@@ -241,267 +309,341 @@ export function AutomationPage() {
               </Button>
             )}
           </div>
-
-
-
         </div>
 
         {/* Configuration */}
-        {!isRunning && (<>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Configuration</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Select Client</Label>
-                {clientsLoading ? (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span className="text-sm">Loading clients...</span>
-                  </div>
-                ) : eligibleClients.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No clients with approved extractions. Create a client and approve their data extraction first.
-                  </p>
-                ) : (
-                  <select
-                    value={selectedClient}
-                    onChange={(e) => setSelectedClient(e.target.value)}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="">Choose a client...</option>
-                    {eligibleClients.map(client => (
-                      <option key={client._id} value={client._id}>
-                        {client.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {selectedClient && loadingExtraction && (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm">Loading extraction data...</span>
+        {!isRunning && (
+          <>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Configuration</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Select Client</Label>
+                  {clientsLoading ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm">Loading clients...</span>
+                    </div>
+                  ) : eligibleClients.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No clients with approved extractions. Create a client and
+                      approve their data extraction first.
+                    </p>
+                  ) : (
+                    <select
+                      value={selectedClient}
+                      onChange={(e) => setSelectedClient(e.target.value)}
+                      className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">Choose a client...</option>
+                      {eligibleClients.map((client) => (
+                        <option key={client._id} value={client._id}>
+                          {client.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-              )}
 
-              {selectedClient && !loadingExtraction && !approvedExtraction && (
-                <p className="text-sm text-yellow-600">
-                  No approved extraction found for this client. Please approve their data extraction first.
-                </p>
-              )}
-
-              <div className="space-y-2">
-                <Label>Select Portal</Label>
-                {portalsLoading ? (
+                {selectedClient && loadingExtraction && (
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span className="text-sm">Loading portals...</span>
+                    <span className="text-sm">Loading extraction data...</span>
                   </div>
-                ) : portals.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No portals configured. Add a portal first.
-                  </p>
-                ) : (
+                )}
+
+                {selectedClient &&
+                  !loadingExtraction &&
+                  !approvedExtraction && (
+                    <p className="text-sm text-yellow-600">
+                      No approved extraction found for this client. Please
+                      approve their data extraction first.
+                    </p>
+                  )}
+
+                <div className="space-y-2">
+                  <Label>Select Portal</Label>
+                  {portalsLoading ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm">Loading portals...</span>
+                    </div>
+                  ) : portals.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No portals configured. Add a portal first.
+                    </p>
+                  ) : (
+                    <select
+                      value={selectedPortal}
+                      onChange={(e) => setSelectedPortal(e.target.value)}
+                      className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">Choose a portal...</option>
+                      {portals.map((portal) => (
+                        <option key={portal._id} value={portal._id}>
+                          {portal.name} ({portal.country})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Gemini Model</Label>
                   <select
-                    value={selectedPortal}
-                    onChange={(e) => setSelectedPortal(e.target.value)}
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
                     className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
                   >
-                    <option value="">Choose a portal...</option>
-                    {portals.map(portal => (
-                      <option key={portal._id} value={portal._id}>
-                        {portal.name} ({portal.country})
-                      </option>
-                    ))}
+                    <option value="gemini-3-flash-preview">
+                      gemini-3-flash-preview (Default)
+                    </option>
+                    <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                    <option value="gemini-2.0-flash-exp">
+                      gemini-2.0-flash-exp
+                    </option>
+                    <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                    <option value="gemini-1.5-flash">gemini-1.5-flash</option>
                   </select>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label>Gemini Model</Label>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="gemini-3-flash-preview">gemini-3-flash-preview (Default)</option>
-                  <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-                  <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp</option>
-                  <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-                  <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-                </select>
-                <p className="text-xs text-muted-foreground">
-                  Select the Gemini model to use for form automation
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4" />
-                  AI Instructions (Optional)
-                </Label>
-                <Textarea
-                  placeholder="E.g., 'Fill professionally' or 'Skip optional fields' or 'Use N/A for empty values'"
-                  value={customPrompt}
-                  onChange={(e) => setCustomPrompt(e.target.value)}
-                  className="min-h-[80px] text-sm"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Add custom instructions for the AI to follow when filling the form.
-                </p>
-              </div>
-
-              {/* Mode Toggle */}
-              <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">Automation Mode</Label>
                   <p className="text-xs text-muted-foreground">
-                    {mode === 'auto' ? 'Continues automatically' : 'Waits for approval'}
+                    Select the Gemini model to use for form automation
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs ${mode === 'manual' ? 'font-bold text-primary' : 'text-muted-foreground'}`}>Manual</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={mode === 'auto'}
-                    onClick={() => setMode(mode === 'auto' ? 'manual' : 'auto')}
-                    className={`
+
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4" />
+                    AI Instructions (Optional)
+                  </Label>
+                  <Textarea
+                    placeholder="E.g., 'Fill professionally' or 'Skip optional fields' or 'Use N/A for empty values'"
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    className="min-h-[80px] text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Add custom instructions for the AI to follow when filling
+                    the form.
+                  </p>
+                </div>
+
+                {/* Mode Toggle */}
+                <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">
+                      Automation Mode
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      {mode === 'auto'
+                        ? 'Continues automatically'
+                        : 'Waits for approval'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-xs ${mode === 'manual' ? 'font-bold text-primary' : 'text-muted-foreground'}`}
+                    >
+                      Manual
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={mode === 'auto'}
+                      onClick={() =>
+                        setMode(mode === 'auto' ? 'manual' : 'auto')
+                      }
+                      className={`
                       relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background
                       ${mode === 'auto' ? 'bg-primary' : 'bg-input'}
                     `}
-                  >
-                    <span
-                      className={`
+                    >
+                      <span
+                        className={`
                         pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform
                         ${mode === 'auto' ? 'translate-x-5' : 'translate-x-0.5'}
                       `}
-                    />
-                  </button>
-                  <span className={`text-xs ${mode === 'auto' ? 'font-bold text-primary' : 'text-muted-foreground'}`}>Auto</span>
+                      />
+                    </button>
+                    <span
+                      className={`text-xs ${mode === 'auto' ? 'font-bold text-primary' : 'text-muted-foreground'}`}
+                    >
+                      Auto
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              {/* Attach Screenshots Toggle */}
-              <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">Attach Screenshots</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Send page screenshot to AI (Slower but more accurate)
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs ${!attachScreenshots ? 'font-bold text-muted-foreground' : 'text-muted-foreground'}`}>Off</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={attachScreenshots}
-                    onClick={() => setAttachScreenshots(!attachScreenshots)}
-                    className={`
+                {/* Attach Screenshots Toggle */}
+                <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">
+                      Attach Screenshots
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Send page screenshot to AI (Slower but more accurate)
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-xs ${!attachScreenshots ? 'font-bold text-muted-foreground' : 'text-muted-foreground'}`}
+                    >
+                      Off
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={attachScreenshots}
+                      onClick={() => setAttachScreenshots(!attachScreenshots)}
+                      className={`
                       relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background
                       ${attachScreenshots ? 'bg-primary' : 'bg-input'}
                     `}
-                  >
-                    <span
-                      className={`
+                    >
+                      <span
+                        className={`
                         pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform
                         ${attachScreenshots ? 'translate-x-5' : 'translate-x-0.5'}
                       `}
-                    />
-                  </button>
-                  <span className={`text-xs ${attachScreenshots ? 'font-bold text-primary' : 'text-muted-foreground'}`}>On</span>
-                </div>
-              </div>
-
-              <Button 
-                onClick={handleStart} 
-                className="w-full" 
-                disabled={!selectedClient || !selectedPortal || !approvedExtraction || isLoading}
-              >
-                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                Start Automation
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Chat History */}
-          {selectedClient && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4" />
-                  Chat History
-                </CardTitle>
-                <CardDescription>
-                  {chatMessages.length} messages with this client
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="relative mb-3">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="search"
-                    placeholder="Search chat history..."
-                    className="pl-9 h-9 text-sm"
-                    value={chatSearchQuery}
-                    onChange={(e) => setChatSearchQuery(e.target.value)}
-                  />
-                </div>
-                {loadingChats ? (
-                  <div className="flex items-center justify-center py-4">
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                      />
+                    </button>
+                    <span
+                      className={`text-xs ${attachScreenshots ? 'font-bold text-primary' : 'text-muted-foreground'}`}
+                    >
+                      On
+                    </span>
                   </div>
-                ) : chatMessages.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No chat history yet. AI instructions will be saved here.
-                  </p>
-                ) : (
+                </div>
 
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {chatMessages
-                      .filter(msg => msg.content.toLowerCase().includes(chatSearchQuery.toLowerCase()))
-                      .map((msg) => (
-                      <div 
-                        key={msg._id} 
-                        className={`group p-2 rounded text-sm relative transition-colors ${
-                          msg.role === 'user' ? 'bg-primary/10 ml-4 hover:bg-primary/15' : 
-                          msg.role === 'ai' ? 'bg-muted mr-4 hover:bg-muted/80' : 'text-center italic text-muted-foreground'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start gap-2">
-                          <div className="flex-1">
-                            <p className="font-medium text-xs mb-1 opacity-70">
-                              {msg.role === 'user' ? 'You' : msg.role === 'ai' ? 'Immigration Copilot' : 'System'}
-                            </p>
-                            {msg.content}
-                          </div>
-                          
-                          {/* Add to Prompt Icon - Only for user messages */}
-                          {msg.role === 'user' && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={() => handleChatClick(msg.content)}
-                              title="Add to prompt"
-                            >
-                              <PlusCircle className="w-4 h-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                    {chatMessages.length > 0 && chatMessages.filter(msg => msg.content.toLowerCase().includes(chatSearchQuery.toLowerCase())).length === 0 && (
-                      <p className="text-center text-xs text-muted-foreground py-2">No matching messages found</p>
+                <div className="space-y-2">
+                  <Button
+                    onClick={handleStart}
+                    className="w-full"
+                    disabled={
+                      !selectedClient ||
+                      !selectedPortal ||
+                      !approvedExtraction ||
+                      isLoading
+                    }
+                  >
+                    {isLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Play className="w-4 h-4" />
                     )}
-                  </div>
-                )}
+                    Start Automation
+                  </Button>
+
+                  {canRetryFilling && (
+                    <Button
+                      onClick={async () => {
+                        await retryFilling();
+                        checkRetryAvailability();
+                      }}
+                      variant="outline"
+                      className="w-full gap-2"
+                      disabled={isLoading || isRunning}
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      Retry Filling
+                    </Button>
+                  )}
+                </div>
               </CardContent>
             </Card>
-          )}
+
+            {/* Chat History */}
+            {selectedClient && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4" />
+                    Chat History
+                  </CardTitle>
+                  <CardDescription>
+                    {chatMessages.length} messages with this client
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="relative mb-3">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="search"
+                      placeholder="Search chat history..."
+                      className="pl-9 h-9 text-sm"
+                      value={chatSearchQuery}
+                      onChange={(e) => setChatSearchQuery(e.target.value)}
+                    />
+                  </div>
+                  {loadingChats ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    </div>
+                  ) : chatMessages.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No chat history yet. AI instructions will be saved here.
+                    </p>
+                  ) : (
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {chatMessages
+                        .filter((msg) =>
+                          msg.content
+                            .toLowerCase()
+                            .includes(chatSearchQuery.toLowerCase()),
+                        )
+                        .map((msg) => (
+                          <div
+                            key={msg._id}
+                            className={`group p-2 rounded text-sm relative transition-colors ${
+                              msg.role === 'user'
+                                ? 'bg-primary/10 ml-4 hover:bg-primary/15'
+                                : msg.role === 'ai'
+                                  ? 'bg-muted mr-4 hover:bg-muted/80'
+                                  : 'text-center italic text-muted-foreground'
+                            }`}
+                          >
+                            <div className="flex justify-between items-start gap-2">
+                              <div className="flex-1">
+                                <p className="font-medium text-xs mb-1 opacity-70">
+                                  {msg.role === 'user'
+                                    ? 'You'
+                                    : msg.role === 'ai'
+                                      ? 'Immigration Copilot'
+                                      : 'System'}
+                                </p>
+                                {msg.content}
+                              </div>
+
+                              {/* Add to Prompt Icon - Only for user messages */}
+                              {msg.role === 'user' && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={() => handleChatClick(msg.content)}
+                                  title="Add to prompt"
+                                >
+                                  <PlusCircle className="w-4 h-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      {chatMessages.length > 0 &&
+                        chatMessages.filter((msg) =>
+                          msg.content
+                            .toLowerCase()
+                            .includes(chatSearchQuery.toLowerCase()),
+                        ).length === 0 && (
+                          <p className="text-center text-xs text-muted-foreground py-2">
+                            No matching messages found
+                          </p>
+                        )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </>
         )}
 
@@ -518,7 +660,9 @@ export function AutomationPage() {
                   <span className="text-sm">{statusMessage}</span>
                 </div>
                 <Progress value={progress} />
-                <p className="text-xs text-muted-foreground text-right">{progress}% complete</p>
+                <p className="text-xs text-muted-foreground text-right">
+                  {progress}% complete
+                </p>
               </CardContent>
             </Card>
 
@@ -529,7 +673,11 @@ export function AutomationPage() {
                   <Play className="w-4 h-4" /> Resume
                 </Button>
               ) : (
-                <Button onClick={pauseAutomation} variant="outline" className="flex-1">
+                <Button
+                  onClick={pauseAutomation}
+                  variant="outline"
+                  className="flex-1"
+                >
                   <Pause className="w-4 h-4" /> Pause
                 </Button>
               )}
@@ -549,7 +697,8 @@ export function AutomationPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-yellow-700 mb-3">
-                    Please solve the {captchaType} in the browser preview, then click continue.
+                    Please solve the {captchaType} in the browser preview, then
+                    click continue.
                   </p>
                   <Button onClick={resumeAfterCaptcha} className="w-full">
                     <CheckCircle className="w-4 h-4" /> I've Solved the CAPTCHA
@@ -577,7 +726,11 @@ export function AutomationPage() {
                     onChange={(e) => setOtpCode(e.target.value)}
                     maxLength={8}
                   />
-                  <Button onClick={handleSubmitOtp} className="w-full" disabled={!otpCode}>
+                  <Button
+                    onClick={handleSubmitOtp}
+                    className="w-full"
+                    disabled={!otpCode}
+                  >
                     Submit OTP
                   </Button>
                 </CardContent>
@@ -592,19 +745,27 @@ export function AutomationPage() {
                     <Sparkles className="w-4 h-4 text-green-600" />
                     Form Filled - Review & Proceed
                   </CardTitle>
-                  <CardDescription>{currentMapping.fields.length} fields filled</CardDescription>
+                  <CardDescription>
+                    {currentMapping.fields.length} fields filled
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="max-h-60 overflow-y-auto space-y-2">
                     {currentMapping.fields.slice(0, 5).map((field, i) => (
                       <div key={i} className="text-xs p-2 rounded bg-muted">
                         <div className="flex justify-between">
-                          <span className="font-medium">{field.fieldLabel}</span>
-                          <span className={`px-1.5 rounded ${field.confidence === 'high' ? 'bg-green-100 text-green-700' : field.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                          <span className="font-medium">
+                            {field.fieldLabel}
+                          </span>
+                          <span
+                            className={`px-1.5 rounded ${field.confidence === 'high' ? 'bg-green-100 text-green-700' : field.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}
+                          >
                             {field.confidence}
                           </span>
                         </div>
-                        <p className="text-muted-foreground truncate">{field.value}</p>
+                        <p className="text-muted-foreground truncate">
+                          {field.value}
+                        </p>
                       </div>
                     ))}
                     {currentMapping.fields.length > 5 && (
@@ -613,19 +774,31 @@ export function AutomationPage() {
                       </p>
                     )}
                   </div>
-                  
+
                   {/* Dynamic Action Buttons */}
                   <div className="flex flex-wrap gap-2">
-                    {currentMapping.actions && currentMapping.actions.length > 0 ? (
+                    {currentMapping.actions &&
+                    currentMapping.actions.length > 0 ? (
                       currentMapping.actions.map((action, i) => (
-                        <Button 
-                          key={i} 
-                          onClick={() => api.automation.executeAction({ actionIndex: i })} 
-                          variant={action.type === 'submit' || action.expectedText?.toLowerCase().includes('submit') ? 'default' : 'outline'}
+                        <Button
+                          key={i}
+                          onClick={() =>
+                            api.automation.executeAction({ actionIndex: i })
+                          }
+                          variant={
+                            action.type === 'submit' ||
+                            action.expectedText
+                              ?.toLowerCase()
+                              .includes('submit')
+                              ? 'default'
+                              : 'outline'
+                          }
                           className="flex-1 min-w-[100px]"
                         >
                           <ArrowRight className="w-4 h-4" />
-                          {action.expectedText || action.description || 'Proceed'}
+                          {action.expectedText ||
+                            action.description ||
+                            'Proceed'}
                         </Button>
                       ))
                     ) : (
@@ -649,28 +822,28 @@ export function AutomationPage() {
           </div>
           <p className="text-lg font-medium">Browser Preview</p>
           <div className="text-sm">
-            {browserViewShown || isRunning 
-              ? (
-                <div className="space-y-4">
-                  <p>The portal is displayed in the embedded browser view</p>
-                  {!isRunning && (
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => {
-                        setSelectedPortal('');
-                        hidePreview();
-                        setBrowserViewShown(false);
-                      }}
-                      className="gap-2"
-                    >
-                      <Square className="w-4 h-4" />
-                      Close Preview
-                    </Button>
-                  )}
-                </div>
-              )
-              : <span>Select a portal to preview it here</span>}
+            {browserViewShown || isRunning ? (
+              <div className="space-y-4">
+                <p>The portal is displayed in the embedded browser view</p>
+                {!isRunning && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedPortal('');
+                      hidePreview();
+                      setBrowserViewShown(false);
+                    }}
+                    className="gap-2"
+                  >
+                    <Square className="w-4 h-4" />
+                    Close Preview
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <span>Select a portal to preview it here</span>
+            )}
           </div>
         </div>
       </div>

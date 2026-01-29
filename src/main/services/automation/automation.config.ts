@@ -1,6 +1,6 @@
 /**
  * Automation Configuration
- * 
+ *
  * Centralized configuration for all automation timeouts and settings.
  * Replaces hardcoded values throughout the codebase.
  */
@@ -26,6 +26,8 @@ export interface NavigationConfig {
 export interface FillingConfig {
   /** Timeout for individual field operations (ms) */
   fieldTimeout: number;
+  /** Max time per fill strategy (click/fill/type) - fail fast to avoid long stalls (ms) */
+  fieldActionTimeout: number;
   /** Delay between keystrokes when typing (ms) */
   typingDelay: number;
   /** Delay between sequential field fills (ms) */
@@ -57,6 +59,7 @@ export const defaultConfig: AutomationConfig = {
   },
   filling: {
     fieldTimeout: 3000,
+    fieldActionTimeout: 8000,
     typingDelay: 50,
     betweenFieldsDelay: 100,
     visibilityTimeout: 5000,
@@ -78,9 +81,9 @@ export function getConfig(): AutomationConfig {
  */
 export function setConfig(partial: Partial<AutomationConfig>): void {
   currentConfig = {
-    pageLoad: { ...currentConfig.pageLoad, ...partial.pageLoad },
-    navigation: { ...currentConfig.navigation, ...partial.navigation },
-    filling: { ...currentConfig.filling, ...partial.filling },
+    pageLoad: { ...currentConfig.pageLoad, ...(partial.pageLoad ?? {}) },
+    navigation: { ...currentConfig.navigation, ...(partial.navigation ?? {}) },
+    filling: { ...currentConfig.filling, ...(partial.filling ?? {}) },
   };
 }
 

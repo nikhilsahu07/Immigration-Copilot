@@ -1,24 +1,24 @@
 /**
  * Automation Service (Refactored)
- * 
+ *
  * Thin orchestrator that coordinates automation job lifecycle.
  * Delegates page processing to PageProcessor and form submission to FormSubmissionHandler.
  */
 
-import { 
-  AutomationJob, 
+import {
+  AutomationJob,
   AutomationCheckpoint,
-  CreateJobInput, 
+  CreateJobInput,
   FormMapping,
   AutomationState,
-  PauseReason
+  PauseReason,
 } from '../../shared/types';
-import { 
-  automationJobRepository, 
-  clientRepository, 
-  portalRepository, 
+import {
+  automationJobRepository,
+  clientRepository,
+  portalRepository,
   extractionRepository,
-  chatRepository
+  chatRepository,
 } from '../database/repositories';
 import { logger, automationLoopLogger } from '../core/logger';
 import { createError } from '../core/error-handler';
@@ -29,9 +29,13 @@ import { browserConnector } from '../automation/browser-connector';
 import { EventEmitter } from '../automation/core/event-emitter';
 import { ModeManager } from '../automation/core/mode-manager';
 import { CanonicalFieldsMap } from '../automation/utils/canonical-fields-map';
+import { PageManager } from '../automation/page-manager';
 
 // Import new modular components
-import { PageProcessor, PageIterationResult } from './automation/page-processor';
+import {
+  PageProcessor,
+  PageIterationResult,
+} from './automation/page-processor';
 import { FormSubmissionHandler } from './automation/form-submission-handler';
 
 export class AutomationService {
@@ -44,7 +48,11 @@ export class AutomationService {
   // Managers and coordinators
   private modeManager: ModeManager = new ModeManager();
   private canonicalFieldsMap: CanonicalFieldsMap = new CanonicalFieldsMap();
-  
+
+  // Stored data for retry filling
+  private lastAiResult: any | null = null;
+  private lastCanonicalFields: any[] | null = null;
+
   // Delegated handlers
   private pageProcessor: PageProcessor;
   private formSubmissionHandler: FormSubmissionHandler;
@@ -53,20 +61,32 @@ export class AutomationService {
     // Initialize page processor with dependency injection
     this.pageProcessor = new PageProcessor({
       getCurrentJob: () => this.currentJob,
-      setCurrentJob: (job) => { this.currentJob = job; },
+      setCurrentJob: (job) => {
+        this.currentJob = job;
+      },
       getCanonicalFieldsMap: () => this.canonicalFieldsMap,
       isRunning: () => this.isRunning,
       isPaused: () => this.isPaused,
-      setCurrentMapping: (mapping) => { this.currentMapping = mapping; },
+      setCurrentMapping: (mapping) => {
+        this.currentMapping = mapping;
+      },
       getCurrentMapping: () => this.currentMapping,
       getModeManager: () => this.modeManager,
+      storeLastAiResult: (aiResult) => {
+        this.lastAiResult = aiResult;
+      },
+      storeLastCanonicalFields: (fields) => {
+        this.lastCanonicalFields = fields;
+      },
     });
 
     // Initialize form submission handler
     this.formSubmissionHandler = new FormSubmissionHandler(
       () => this.currentJob,
       () => this.currentMapping,
-      (mapping) => { this.currentMapping = mapping; }
+      (mapping) => {
+        this.currentMapping = mapping;
+      },
     );
   }
 
@@ -74,9 +94,9 @@ export class AutomationService {
    * Start automation for a client
    */
   async start(
-    companyId: string, 
-    agentId: string, 
-    input: CreateJobInput
+    companyId: string,
+    agentId: string,
+    input: CreateJobInput,
   ): Promise<AutomationJob> {
     logger.info(`Starting automation for client ${input.clientId}`);
 
@@ -88,7 +108,8 @@ export class AutomationService {
     ]);
 
     if (!client) throw createError(ERROR_CODES.CLIENT_NOT_FOUND);
-    if (!portal) throw createError(ERROR_CODES.PORTAL_NOT_FOUND, 'Portal not found');
+    if (!portal)
+      throw createError(ERROR_CODES.PORTAL_NOT_FOUND, 'Portal not found');
     if (!extraction) throw createError(ERROR_CODES.EXTRACTION_NOT_FOUND);
 
     // 2. Create Job in DB
@@ -104,7 +125,7 @@ export class AutomationService {
           clientId: input.clientId,
           content: input.customPrompt,
           role: 'user',
-          jobId: job._id.toString()
+          jobId: job._id.toString(),
         });
       } catch (err) {
         logger.error('Failed to save chat message', err);
@@ -124,13 +145,15 @@ export class AutomationService {
     // Handle current URL vs portal URL
     const currentURL = bvm.getCurrentURL();
     const portalURL = portal.url;
-    const normalizedCurrentURL = currentURL ? this.normalizeURL(currentURL) : null;
+    const normalizedCurrentURL = currentURL
+      ? this.normalizeURL(currentURL)
+      : null;
     const normalizedPortalURL = this.normalizeURL(portalURL);
 
     // CRITICAL: Show BrowserView FIRST before loading URL or connecting to CDP
     // This ensures it's visible throughout the entire process
     bvm.show();
-    
+
     // CRITICAL: Lock BrowserView to prevent it from being hidden during automation
     bvm.lockHide();
 
@@ -156,27 +179,29 @@ export class AutomationService {
       logger.warn('Page load wait failed, proceeding anyway', error);
       // Continue anyway - page might be ready even if wait failed
     }
-    
+
     // 4. Connect via CDP and start processing
     try {
       EventEmitter.emitStatus('Connecting to browser...', 10);
       await browserConnector.connect();
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 100));
 
       // CRITICAL: Ensure BrowserView is visible after CDP connection
       // CDP connection might cause BrowserView to be hidden, so we re-show it
       bvm.show();
 
       await automationJobRepository.updateStatus(job._id, 'running');
-      
+
       // CRITICAL: Re-show BrowserView after status update
       // Status update might trigger something that hides BrowserView, so ensure it stays visible
       bvm.show();
-      
+
       // Small delay to ensure BrowserView visibility is set before starting job loop
-      await new Promise(r => setTimeout(r, 200));
-      
-      automationLoopLogger.info(`Starting automation job loop for job ${job._id}`);
+      await new Promise((r) => setTimeout(r, 200));
+
+      automationLoopLogger.info(
+        `Starting automation job loop for job ${job._id}`,
+      );
       void this.runJobLoop(job._id);
     } catch (e) {
       logger.error('Failed to connect to browser', e);
@@ -193,7 +218,7 @@ export class AutomationService {
   private async runJobLoop(jobId: string): Promise<void> {
     this.isRunning = true;
     automationLoopLogger.info(`runJobLoop started for job ${jobId}`);
-    
+
     // CRITICAL: Ensure BrowserView is visible when job loop starts
     // This prevents it from being hidden during automation
     const bvm = getBrowserViewManager();
@@ -250,9 +275,11 @@ export class AutomationService {
         // CRITICAL: Check if we're waiting for user approval before processing
         // If a mapping exists, we're waiting for approval - don't process the same page again
         if (this.currentMapping) {
-          automationLoopLogger.info('Waiting for user approval - pausing loop iteration');
+          automationLoopLogger.info(
+            'Waiting for user approval - pausing loop iteration',
+          );
           // Wait a bit before checking again (don't spin the CPU)
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise((r) => setTimeout(r, 1000));
           continue;
         }
 
@@ -260,11 +287,20 @@ export class AutomationService {
         let result: PageIterationResult;
         if (checkpoint) {
           result = await this.pageProcessor.resumeFromCheckpoint(
-            job, client, extraction, portalUrl, customPrompt, checkpoint
+            job,
+            client,
+            extraction,
+            portalUrl,
+            customPrompt,
+            checkpoint,
           );
         } else {
           result = await this.pageProcessor.executeWorkflowForCurrentPage(
-            job, client, extraction, portalUrl, customPrompt
+            job,
+            client,
+            extraction,
+            portalUrl,
+            customPrompt,
           );
         }
 
@@ -272,7 +308,7 @@ export class AutomationService {
         if (!this.isRunning || this.isPaused) break;
 
         if (result.kind === 'retry') {
-          await new Promise(r => setTimeout(r, result.delayMs));
+          await new Promise((r) => setTimeout(r, result.delayMs));
           continue;
         }
 
@@ -286,34 +322,39 @@ export class AutomationService {
         if (result.kind === 'job_completed') {
           await automationJobRepository.updateStatus(jobId, 'completed');
           this.isRunning = false;
-          
+
           // Unlock BrowserView when automation completes
           const bvm = getBrowserViewManager();
           if (bvm) {
             bvm.unlockHide();
           }
-          
+
           break;
         }
 
         if (result.kind === 'job_failed') {
-          await automationJobRepository.setError(jobId, result.reason || 'Automation failed');
+          await automationJobRepository.setError(
+            jobId,
+            result.reason || 'Automation failed',
+          );
           this.isRunning = false;
-          
+
           // Unlock BrowserView when automation fails
           const bvm = getBrowserViewManager();
           if (bvm) {
             bvm.unlockHide();
           }
-          
+
           break;
         }
       }
     } catch (error) {
-      automationLoopLogger.error(`runJobLoop error: ${(error as Error).message}`);
+      automationLoopLogger.error(
+        `runJobLoop error: ${(error as Error).message}`,
+      );
       await automationJobRepository.setError(jobId, (error as Error).message);
       this.isRunning = false;
-      
+
       // Unlock BrowserView on error
       const bvm = getBrowserViewManager();
       if (bvm) {
@@ -331,20 +372,20 @@ export class AutomationService {
       await automationJobRepository.update(
         this.currentJob._id,
         this.currentJob.companyId,
-        { status: 'failed', completedAt: new Date() }
+        { status: 'failed', completedAt: new Date() },
       );
       this.currentJob = null;
     }
     this.isRunning = false;
     this.isPaused = false;
     this.currentMapping = null;
-    
+
     // Unlock BrowserView when automation stops
     const bvm = getBrowserViewManager();
     if (bvm) {
       bvm.unlockHide();
     }
-    
+
     EventEmitter.emitStatus('Automation stopped', 0);
   }
 
@@ -353,7 +394,7 @@ export class AutomationService {
       const updated = await automationJobRepository.update(
         this.currentJob._id,
         this.currentJob.companyId,
-        { status: 'paused', pauseReason: reason || 'user_paused' }
+        { status: 'paused', pauseReason: reason || 'user_paused' },
       );
       if (updated) this.currentJob = updated;
     }
@@ -367,7 +408,7 @@ export class AutomationService {
       const updated = await automationJobRepository.update(
         this.currentJob._id,
         this.currentJob.companyId,
-        { status: 'running', pauseReason: undefined }
+        { status: 'running', pauseReason: undefined },
       );
       if (updated) this.currentJob = updated;
     }
@@ -381,7 +422,9 @@ export class AutomationService {
     this.isRunning = true;
     EventEmitter.emitStatus('Resuming...', 0);
 
-    automationLoopLogger.info(`Resuming automation loop for job ${this.currentJob._id}`);
+    automationLoopLogger.info(
+      `Resuming automation loop for job ${this.currentJob._id}`,
+    );
     void this.runJobLoop(this.currentJob._id);
   }
 
@@ -408,7 +451,11 @@ export class AutomationService {
       currentJob: this.currentJob || undefined,
       currentMapping: this.currentMapping || undefined,
       progress: 0,
-      statusMessage: this.isRunning ? (this.isPaused ? 'Paused' : 'Running') : 'Idle',
+      statusMessage: this.isRunning
+        ? this.isPaused
+          ? 'Paused'
+          : 'Running'
+        : 'Idle',
       needsApproval: !!this.currentMapping,
       captchaDetected: false,
       otpDetected: false,
@@ -420,10 +467,98 @@ export class AutomationService {
     this.modeManager.setMode(mode);
     EventEmitter.emitStatus(`Mode switched to ${mode}`, 0);
 
-    if (mode === 'auto' && this.currentMapping && this.isRunning && !this.isPaused) {
+    if (
+      mode === 'auto' &&
+      this.currentMapping &&
+      this.isRunning &&
+      !this.isPaused
+    ) {
       logger.info('Switched to auto while waiting - triggering approval');
       this.approveMapping(this.currentMapping);
     }
+  }
+
+  /**
+   * Retry form filling using stored Gemini response and canonical fields
+   * Skips extraction and AI analysis, goes straight to filling
+   */
+  async retryFilling(): Promise<void> {
+    if (!this.lastAiResult || !this.lastCanonicalFields) {
+      throw new Error(
+        'No stored AI result or canonical fields available for retry',
+      );
+    }
+
+    if (!this.currentJob) {
+      throw new Error('No active job for retry');
+    }
+
+    logger.info('Retrying form filling with stored data');
+
+    try {
+      // Get current page
+      const portalUrl = this.currentJob.currentUrl || '';
+      const portalDomain = new URL(portalUrl || 'http://localhost').hostname;
+      const page = await browserConnector.getPageByUrl(portalDomain);
+
+      if (!page) {
+        throw new Error('Could not find page for retry');
+      }
+
+      const pageManager = new PageManager(page);
+
+      // Initialize canonical fields map with stored data
+      this.canonicalFieldsMap.initialize(this.lastCanonicalFields);
+
+      // Get documents for document lookup
+      const { documentRepository } = await import('../database/repositories');
+      const documents = await documentRepository.findByClient(
+        this.currentJob.clientId,
+        this.currentJob.companyId || '',
+      );
+      const documentLookup = new Map(
+        documents.map((d) => [d.originalName, d.s3Key]),
+      );
+
+      // Use stored AI result directly - skip AI analysis
+      EventEmitter.emitStatus('Retrying form filling...', 50);
+
+      // Route to form page handler
+      if (
+        this.lastAiResult.pageType === 'dashboard' ||
+        !this.lastAiResult.isFormPage
+      ) {
+        await this.pageProcessor['handleDashboardPage'](
+          page,
+          pageManager,
+          this.lastAiResult,
+        );
+      } else {
+        await this.pageProcessor.retryFormFilling(
+          page,
+          pageManager,
+          this.lastAiResult,
+          documentLookup,
+        );
+      }
+
+      EventEmitter.emitStatus('Form filling retry completed', 70);
+    } catch (error) {
+      logger.error('Retry filling failed:', error);
+      EventEmitter.emitStatus(
+        'Retry failed: ' +
+          (error instanceof Error ? error.message : String(error)),
+        0,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Check if retry filling is available
+   */
+  canRetryFilling(): boolean {
+    return !!(this.lastAiResult && this.lastCanonicalFields);
   }
 
   // --- Helpers ---

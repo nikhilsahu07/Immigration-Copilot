@@ -11,7 +11,8 @@ function createInvoker<TRequest, TResponse>(channel: string) {
 // Type-safe IPC event listener wrapper
 function createListener<T>(channel: string) {
   return (callback: (data: T) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: T) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: T) =>
+      callback(data);
     ipcRenderer.on(channel, listener);
     return () => ipcRenderer.removeListener(channel, listener);
   };
@@ -110,11 +111,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     rejectMapping: createInvoker(IPC_CHANNELS.AUTOMATION_REJECT_MAPPING),
     submitForm: createInvoker(IPC_CHANNELS.AUTOMATION_SUBMIT_FORM),
     submitOtp: createInvoker(IPC_CHANNELS.AUTOMATION_SUBMIT_OTP),
-    resumeAfterCaptcha: createInvoker(IPC_CHANNELS.AUTOMATION_RESUME_AFTER_CAPTCHA),
+    resumeAfterCaptcha: createInvoker(
+      IPC_CHANNELS.AUTOMATION_RESUME_AFTER_CAPTCHA,
+    ),
     executeAction: createInvoker(IPC_CHANNELS.AUTOMATION_EXECUTE_ACTION),
     setMode: createInvoker(IPC_CHANNELS.AUTOMATION_SET_MODE),
     getState: createInvoker(IPC_CHANNELS.AUTOMATION_GET_STATE),
     getHistory: createInvoker(IPC_CHANNELS.AUTOMATION_GET_HISTORY),
+    retryFilling: createInvoker(IPC_CHANNELS.AUTOMATION_RETRY_FILLING),
+    canRetry: createInvoker(IPC_CHANNELS.AUTOMATION_CAN_RETRY),
   },
 
   // BrowserView

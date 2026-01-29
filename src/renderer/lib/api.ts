@@ -1,9 +1,13 @@
 // Type definitions for the Electron API exposed via preload
 
-import type { Result, PaginatedResult, PaginationParams } from '../../shared/types';
-import type { 
-  LoginInput, 
-  RegisterInput, 
+import type {
+  Result,
+  PaginatedResult,
+  PaginationParams,
+} from '../../shared/types';
+import type {
+  LoginInput,
+  RegisterInput,
   LoginResponse,
   AuthSession,
   Client,
@@ -62,7 +66,9 @@ export interface ChatMessage {
 export interface ElectronAPI {
   dashboard: {
     getStats: () => Promise<Result<DashboardStats>>;
-    getActivity: (params?: { limit?: number }) => Promise<Result<ActivityItem[]>>;
+    getActivity: (params?: {
+      limit?: number;
+    }) => Promise<Result<ActivityItem[]>>;
   };
   auth: {
     register: (data: RegisterInput) => Promise<Result<LoginResponse>>;
@@ -75,50 +81,86 @@ export interface ElectronAPI {
     update: (data: { id: string; data: unknown }) => Promise<Result<unknown>>;
   };
   agent: {
-    list: (params: PaginationParams) => Promise<Result<PaginatedResult<AgentPublic>>>;
+    list: (
+      params: PaginationParams,
+    ) => Promise<Result<PaginatedResult<AgentPublic>>>;
     get: (data: { id: string }) => Promise<Result<AgentPublic>>;
     create: (data: CreateAgentInput) => Promise<Result<AgentPublic>>;
-    update: (data: { id: string; data: UpdateAgentInput }) => Promise<Result<AgentPublic>>;
+    update: (data: {
+      id: string;
+      data: UpdateAgentInput;
+    }) => Promise<Result<AgentPublic>>;
     delete: (data: { id: string }) => Promise<Result<void>>;
   };
   client: {
-    list: (params: PaginationParams & { search?: string; status?: string }) => Promise<Result<PaginatedResult<ClientWithDocumentCount>>>;
+    list: (
+      params: PaginationParams & { search?: string; status?: string },
+    ) => Promise<Result<PaginatedResult<ClientWithDocumentCount>>>;
     get: (data: { id: string }) => Promise<Result<ClientWithDocumentCount>>;
     create: (data: CreateClientInput) => Promise<Result<Client>>;
-    update: (data: { id: string; data: UpdateClientInput }) => Promise<Result<Client>>;
+    update: (data: {
+      id: string;
+      data: UpdateClientInput;
+    }) => Promise<Result<Client>>;
     delete: (data: { id: string }) => Promise<Result<void>>;
   };
   document: {
-    list: (data: { clientId: string }) => Promise<Result<DocumentWithPresignedUrl[]>>;
-    upload: (data: UploadDocumentInput) => Promise<Result<DocumentWithPresignedUrl>>;
+    list: (data: {
+      clientId: string;
+    }) => Promise<Result<DocumentWithPresignedUrl[]>>;
+    upload: (
+      data: UploadDocumentInput,
+    ) => Promise<Result<DocumentWithPresignedUrl>>;
     delete: (data: { id: string }) => Promise<Result<void>>;
-    getPresignedUrl: (data: { id: string }) => Promise<Result<{ url: string; expiresAt: Date }>>;
+    getPresignedUrl: (data: {
+      id: string;
+    }) => Promise<Result<{ url: string; expiresAt: Date }>>;
   };
   extraction: {
     list: (data: { clientId: string }) => Promise<Result<Extraction[]>>;
     get: (data: { id: string }) => Promise<Result<Extraction>>;
     create: (data: CreateExtractionInput) => Promise<Result<Extraction>>;
-    update: (data: { id: string; data: { extractedData?: unknown } }) => Promise<Result<Extraction>>;
-    approve: (data: { id: string; data?: ApproveExtractionInput }) => Promise<Result<Extraction>>;
-    reject: (data: { id: string; data: RejectExtractionInput }) => Promise<Result<Extraction>>;
+    update: (data: {
+      id: string;
+      data: { extractedData?: unknown };
+    }) => Promise<Result<Extraction>>;
+    approve: (data: {
+      id: string;
+      data?: ApproveExtractionInput;
+    }) => Promise<Result<Extraction>>;
+    reject: (data: {
+      id: string;
+      data: RejectExtractionInput;
+    }) => Promise<Result<Extraction>>;
     delete: (data: { id: string }) => Promise<Result<void>>;
   };
   portal: {
     list: () => Promise<Result<Portal[]>>;
     get: (data: { id: string }) => Promise<Result<Portal>>;
     create: (data: CreatePortalInput) => Promise<Result<Portal>>;
-    update: (data: { id: string; data: UpdatePortalInput }) => Promise<Result<Portal>>;
+    update: (data: {
+      id: string;
+      data: UpdatePortalInput;
+    }) => Promise<Result<Portal>>;
     delete: (data: { id: string }) => Promise<Result<void>>;
   };
   chat: {
     list: (data: { clientId: string }) => Promise<Result<ChatMessage[]>>;
-    create: (data: { clientId: string; content: string; role: string; jobId?: string }) => Promise<Result<ChatMessage>>;
+    create: (data: {
+      clientId: string;
+      content: string;
+      role: string;
+      jobId?: string;
+    }) => Promise<Result<ChatMessage>>;
   };
   credential: {
     list: () => Promise<Result<Credential[]>>;
     get: (data: { id: string }) => Promise<Result<Credential>>;
     create: (data: CreateCredentialInput) => Promise<Result<Credential>>;
-    update: (data: { id: string; data: UpdateCredentialInput }) => Promise<Result<Credential>>;
+    update: (data: {
+      id: string;
+      data: UpdateCredentialInput;
+    }) => Promise<Result<Credential>>;
     delete: (data: { id: string }) => Promise<Result<void>>;
     getActive: () => Promise<Result<Credential | null>>;
   };
@@ -135,7 +177,11 @@ export interface ElectronAPI {
     executeAction: (data: { actionIndex: number }) => Promise<Result<void>>;
     setMode: (data: { mode: 'auto' | 'manual' }) => Promise<Result<void>>;
     getState: () => Promise<Result<AutomationState>>;
-    getHistory: (params: PaginationParams) => Promise<Result<PaginatedResult<AutomationJob>>>;
+    getHistory: (
+      params: PaginationParams,
+    ) => Promise<Result<PaginatedResult<AutomationJob>>>;
+    retryFilling: () => Promise<Result<void>>;
+    canRetry: () => Promise<Result<boolean>>;
   };
   browserView: {
     load: (data: { url: string }) => Promise<Result<void>>;
@@ -145,12 +191,22 @@ export interface ElectronAPI {
     close: () => Promise<Result<void>>;
   };
   events: {
-    onStatusUpdate: (callback: (data: { message: string; progress: number }) => void) => () => void;
+    onStatusUpdate: (
+      callback: (data: { message: string; progress: number }) => void,
+    ) => () => void;
     onFormPreview: (callback: (data: FormMapping) => void) => () => void;
-    onCaptchaDetected: (callback: (data: { type: string }) => void) => () => void;
-    onOtpRequired: (callback: (data: { fieldSelector: string }) => void) => () => void;
-    onJobCompleted: (callback: (data: { jobId: string; success: boolean }) => void) => () => void;
-    onPageChanged: (callback: (data: { page: number; total: number }) => void) => () => void;
+    onCaptchaDetected: (
+      callback: (data: { type: string }) => void,
+    ) => () => void;
+    onOtpRequired: (
+      callback: (data: { fieldSelector: string }) => void,
+    ) => () => void;
+    onJobCompleted: (
+      callback: (data: { jobId: string; success: boolean }) => void,
+    ) => () => void;
+    onPageChanged: (
+      callback: (data: { page: number; total: number }) => void,
+    ) => () => void;
   };
 }
 

@@ -1,6 +1,6 @@
 /**
  * Form Filling Coordinator
- * 
+ *
  * Handles sequential field filling (no parallel execution).
  * Uses FieldMapper for transforming AI fields to AutomatedField format.
  */
@@ -29,7 +29,7 @@ export interface FillResult {
 export class FormFillingCoordinator {
   constructor(
     private page: Page,
-    private canonicalFieldsMap: CanonicalFieldsMap
+    private canonicalFieldsMap: CanonicalFieldsMap,
   ) {}
 
   /**
@@ -38,7 +38,7 @@ export class FormFillingCoordinator {
    */
   async fillFieldsSequentially(
     behaviorFields: BehaviorField[],
-    documentLookup?: Map<string, string>
+    documentLookup?: Map<string, string>,
   ): Promise<FillResult[]> {
     const config = getConfig();
     const results: FillResult[] = [];
@@ -47,14 +47,14 @@ export class FormFillingCoordinator {
     automationBatchLogger.info('Starting sequential field fill', {
       url: this.page.url(),
       totalFields: behaviorFields.length,
-      mode: 'sequential'
+      mode: 'sequential',
     });
 
     // Use FieldMapper to transform AI fields to AutomatedField format
     const automatedFields = FieldMapper.mapFields(
       behaviorFields,
       this.canonicalFieldsMap,
-      documentLookup
+      documentLookup,
     );
 
     for (let i = 0; i < automatedFields.length; i++) {
@@ -65,9 +65,13 @@ export class FormFillingCoordinator {
       // Lookup canonical field for semantic discovery
       let canonicalField: CanonicalField | undefined;
       if (automatedField.fieldId) {
-        canonicalField = this.canonicalFieldsMap.getByFieldId(automatedField.fieldId);
+        canonicalField = this.canonicalFieldsMap.getByFieldId(
+          automatedField.fieldId,
+        );
       } else if (automatedField.fieldName) {
-        const matches = this.canonicalFieldsMap.getByAccessibleName(automatedField.fieldName);
+        const matches = this.canonicalFieldsMap.getByAccessibleName(
+          automatedField.fieldName,
+        );
         if (matches.length > 0) {
           canonicalField = matches[0];
         }
@@ -76,9 +80,12 @@ export class FormFillingCoordinator {
       const filler = BehaviorFillerFactory.getFiller(
         behaviorField.behavior,
         this.page,
-        behaviorField.fieldName
+        behaviorField.fieldName,
+        { fieldActionTimeout: config.filling.fieldActionTimeout },
       );
-      const fillerName = BehaviorFillerFactory.getFillerName(behaviorField.behavior);
+      const fillerName = BehaviorFillerFactory.getFillerName(
+        behaviorField.behavior,
+      );
 
       // Set canonical field for semantic discovery
       if (canonicalField) {
@@ -122,7 +129,6 @@ export class FormFillingCoordinator {
         if (i < automatedFields.length - 1) {
           await this.page.waitForTimeout(config.filling.betweenFieldsDelay);
         }
-
       } catch (error) {
         const duration = Date.now() - fieldStartTime;
 
@@ -151,8 +157,8 @@ export class FormFillingCoordinator {
 
     automationBatchLogger.info('Sequential batch completed', {
       totalFields: behaviorFields.length,
-      succeeded: results.filter(r => r.success).length,
-      failed: results.filter(r => !r.success).length,
+      succeeded: results.filter((r) => r.success).length,
+      failed: results.filter((r) => !r.success).length,
       duration: batchDuration,
       avgTimePerField: Math.round(batchDuration / behaviorFields.length),
     });
@@ -166,7 +172,7 @@ export class FormFillingCoordinator {
    */
   static filterEligibleFields(
     fields: BehaviorField[],
-    isAutoMode: boolean
+    isAutoMode: boolean,
   ): BehaviorField[] {
     const result = this.filterByConfidence(fields, isAutoMode);
     return result.eligible;
@@ -177,7 +183,7 @@ export class FormFillingCoordinator {
    */
   static filterByConfidence(
     fields: BehaviorField[],
-    isAutoMode: boolean
+    isAutoMode: boolean,
   ): {
     eligible: BehaviorField[];
     highConfidence: BehaviorField[];
@@ -185,18 +191,22 @@ export class FormFillingCoordinator {
     lowConfidence: BehaviorField[];
     missingData: BehaviorField[];
   } {
-    const highConfidence = fields.filter(f => f.confidence === 'high');
-    const mediumConfidence = fields.filter(f => f.confidence === 'medium');
-    const lowConfidence = fields.filter(f => f.confidence === 'low');
-    const missingData = fields.filter(f => f.status === 'missing_data' || f.expectedValue === '__MISSING__');
+    const highConfidence = fields.filter((f) => f.confidence === 'high');
+    const mediumConfidence = fields.filter((f) => f.confidence === 'medium');
+    const lowConfidence = fields.filter((f) => f.confidence === 'low');
+    const missingData = fields.filter(
+      (f) => f.status === 'missing_data' || f.expectedValue === '__MISSING__',
+    );
 
     // Eligible fields for filling:
     // - Always include high confidence with values
     // - Include medium confidence in auto mode only
     // - Exclude low confidence and missing data
     const eligible = [
-      ...highConfidence.filter(f => f.expectedValue !== '__MISSING__'),
-      ...(isAutoMode ? mediumConfidence.filter(f => f.expectedValue !== '__MISSING__') : [])
+      ...highConfidence.filter((f) => f.expectedValue !== '__MISSING__'),
+      ...(isAutoMode
+        ? mediumConfidence.filter((f) => f.expectedValue !== '__MISSING__')
+        : []),
     ];
 
     return {
@@ -204,7 +214,7 @@ export class FormFillingCoordinator {
       highConfidence,
       mediumConfidence,
       lowConfidence,
-      missingData
+      missingData,
     };
   }
 
@@ -212,6 +222,6 @@ export class FormFillingCoordinator {
    * Get required field failures from results
    */
   static getRequiredFieldFailures(results: FillResult[]): FillResult[] {
-    return results.filter(r => r.required && !r.success);
+    return results.filter((r) => r.required && !r.success);
   }
 }

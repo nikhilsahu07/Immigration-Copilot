@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { api } from '../lib/api';
-import type { FormMapping, AutomationJob, CreateJobInput } from '../../shared/types';
+import type {
+  FormMapping,
+  AutomationJob,
+  CreateJobInput,
+} from '../../shared/types';
 
 interface AutomationStoreState {
   // State
@@ -18,14 +22,15 @@ interface AutomationStoreState {
   isLoading: boolean;
   error: string | null;
   mode: 'auto' | 'manual';
-  
+  canRetryFilling: boolean;
+
   // Form state (persisted across navigation)
   selectedClient: string;
   selectedPortal: string;
   customPrompt: string;
   browserViewShown: boolean;
   attachScreenshots: boolean;
-  
+
   // Actions
   setMode: (mode: 'auto' | 'manual') => Promise<void>;
   setSelectedClient: (clientId: string) => void;
@@ -46,7 +51,9 @@ interface AutomationStoreState {
   hidePreview: () => Promise<void>;
   closeBrowser: () => Promise<void>;
   clearFormState: () => Promise<void>;
-  
+  retryFilling: () => Promise<boolean>;
+  checkRetryAvailability: () => Promise<void>;
+
   // Internal
   setStatus: (message: string, progress: number) => void;
   setMapping: (mapping: FormMapping) => void;
@@ -79,6 +86,7 @@ const initialState = {
   customPrompt: '',
   browserViewShown: false,
   attachScreenshots: false,
+  canRetryFilling: false,
 };
 
 export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
@@ -107,7 +115,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
     } catch {
       // Ignore errors
     }
-    set({ 
+    set({
       selectedClient: '',
       selectedPortal: '',
       customPrompt: '',
@@ -130,7 +138,10 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
         });
         return true;
       } else {
-        set({ error: result.error || 'Failed to start automation', isLoading: false });
+        set({
+          error: result.error || 'Failed to start automation',
+          isLoading: false,
+        });
         return false;
       }
     } catch {
@@ -143,7 +154,12 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
     try {
       await api.automation.stop();
       // NOTE: Don't hide browser view on stop - keep it open for manual use
-      set({ isRunning: false, isPaused: false, currentJob: null, statusMessage: 'Automation stopped' });
+      set({
+        isRunning: false,
+        isPaused: false,
+        currentJob: null,
+        statusMessage: 'Automation stopped',
+      });
     } catch {
       set({ error: 'Failed to stop automation' });
     }
@@ -172,7 +188,11 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
     try {
       const result = await api.automation.approveMapping({ mapping });
       if (result.success) {
-        set({ needsApproval: false, statusMessage: 'Filling form...', isLoading: false });
+        set({
+          needsApproval: false,
+          statusMessage: 'Filling form...',
+          isLoading: false,
+        });
         return true;
       } else {
         set({ error: result.error || 'Failed to approve', isLoading: false });
@@ -206,10 +226,16 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
     try {
       const result = await api.automation.submitForm();
       if (result.success) {
-        set({ statusMessage: 'Form submitted, checking for next page...', isLoading: false });
+        set({
+          statusMessage: 'Form submitted, checking for next page...',
+          isLoading: false,
+        });
         return true;
       } else {
-        set({ error: result.error || 'Failed to submit form', isLoading: false });
+        set({
+          error: result.error || 'Failed to submit form',
+          isLoading: false,
+        });
         return false;
       }
     } catch {
@@ -223,10 +249,18 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
     try {
       const result = await api.automation.submitOtp({ otp });
       if (result.success) {
-        set({ otpDetected: false, otpFieldSelector: null, statusMessage: 'OTP submitted', isLoading: false });
+        set({
+          otpDetected: false,
+          otpFieldSelector: null,
+          statusMessage: 'OTP submitted',
+          isLoading: false,
+        });
         return true;
       } else {
-        set({ error: result.error || 'Failed to submit OTP', isLoading: false });
+        set({
+          error: result.error || 'Failed to submit OTP',
+          isLoading: false,
+        });
         return false;
       }
     } catch {
@@ -240,7 +274,12 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
     try {
       const result = await api.automation.resumeAfterCaptcha();
       if (result.success) {
-        set({ captchaDetected: false, captchaType: null, statusMessage: 'Resuming after CAPTCHA...', isLoading: false });
+        set({
+          captchaDetected: false,
+          captchaType: null,
+          statusMessage: 'Resuming after CAPTCHA...',
+          isLoading: false,
+        });
         return true;
       } else {
         set({ error: result.error || 'Failed to resume', isLoading: false });
@@ -278,21 +317,60 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
 
   // Internal setters
   setStatus: (message, progress) => set({ statusMessage: message, progress }),
-  setMapping: (mapping) => set({ currentMapping: mapping, needsApproval: true }),
-  setCaptcha: (type) => set({ captchaDetected: true, captchaType: type, isPaused: true }),
-  setOtp: (selector) => set({ otpDetected: true, otpFieldSelector: selector, isPaused: true }),
-  setJobCompleted: (success) => set({ 
-    isRunning: false, 
-    isPaused: false,
-    statusMessage: success ? 'Automation completed successfully' : 'Automation failed',
-    progress: success ? 100 : get().progress,
-  }),
-  setPage: (page, total) => set({ 
-    statusMessage: `Processing page ${page} of ${total}`,
-    progress: Math.round((page / total) * 100),
-  }),
+  setMapping: (mapping) =>
+    set({ currentMapping: mapping, needsApproval: true }),
+  setCaptcha: (type) =>
+    set({ captchaDetected: true, captchaType: type, isPaused: true }),
+  setOtp: (selector) =>
+    set({ otpDetected: true, otpFieldSelector: selector, isPaused: true }),
+  setJobCompleted: (success) =>
+    set({
+      isRunning: false,
+      isPaused: false,
+      statusMessage: success
+        ? 'Automation completed successfully'
+        : 'Automation failed',
+      progress: success ? 100 : get().progress,
+    }),
+  setPage: (page, total) =>
+    set({
+      statusMessage: `Processing page ${page} of ${total}`,
+      progress: Math.round((page / total) * 100),
+    }),
   reset: () => set(initialState),
   clearError: () => set({ error: null }),
+
+  retryFilling: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const result = await api.automation.retryFilling();
+      if (result.success) {
+        set({ statusMessage: 'Retrying form filling...', isLoading: false });
+        return true;
+      } else {
+        set({
+          error: result.error || 'Failed to retry filling',
+          isLoading: false,
+        });
+        return false;
+      }
+    } catch {
+      set({ error: 'An unexpected error occurred', isLoading: false });
+      return false;
+    }
+  },
+
+  checkRetryAvailability: async () => {
+    try {
+      const result = await api.automation.canRetry();
+      if (result.success) {
+        set({ canRetryFilling: result.data || false });
+      }
+    } catch {
+      // Ignore errors - just don't show retry button
+      set({ canRetryFilling: false });
+    }
+  },
 }));
 
 // Subscribe to events from main process

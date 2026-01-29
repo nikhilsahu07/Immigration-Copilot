@@ -1,6 +1,11 @@
-
 import { TextFiller } from './text-filler';
-import { AutomatedField, FillResult, FillStrategy } from './base-filler';
+import {
+  AutomatedField,
+  FillResult,
+  FillStrategy,
+  UILibrary,
+  VerificationResult,
+} from './base-filler';
 
 /**
  * SearchSelectFiller - Handles searchable/filterable dropdowns.
@@ -9,6 +14,8 @@ import { AutomatedField, FillResult, FillStrategy } from './base-filler';
  * This builds on TextFiller strategies but adds:
  * - A DOM strategy that can operate directly on <select> elements and
  *   Bootstrap "selectpicker" widgets (as used on coursefinder.ai).
+ * - Bootstrap select detection in tryUILibraryFill so we use selectOption/Bootstrap path instead of text fill.
+ * - Select-aware verification so DOM success on <select> / Bootstrap select passes verifyFill.
  * - An enhanced keyboard strategy that presses Enter to confirm the first match.
  */
 export class SearchSelectFiller extends TextFiller {
@@ -17,19 +24,19 @@ export class SearchSelectFiller extends TextFiller {
    */
   protected async tryKeyboardFill(field: AutomatedField, retryCount: number) {
     const result = await super.tryKeyboardFill(field, retryCount);
-    
+
     if (result.success) {
       try {
         // Wait for dropdown/suggestions
         await this.page.waitForTimeout(300);
-        
+
         // Press Enter to select first match
         await this.page.keyboard.press('Enter');
       } catch {
         // Ignore if Enter fails
       }
     }
-    
+
     return result;
   }
 
@@ -64,7 +71,9 @@ export class SearchSelectFiller extends TextFiller {
           selectEl = el as HTMLSelectElement;
         } else if (el.tagName === 'BUTTON' && el.getAttribute('data-id')) {
           const selectId = el.getAttribute('data-id')!;
-          selectEl = document.querySelector(`select[id="${selectId}"]`) as HTMLSelectElement | null;
+          selectEl = document.querySelector(
+            `select[id="${selectId}"]`,
+          ) as HTMLSelectElement | null;
         }
 
         if (!selectEl || !selectEl.options) {
@@ -74,21 +83,32 @@ export class SearchSelectFiller extends TextFiller {
         const searchLower = search.toLowerCase();
         const options = Array.from(selectEl.options);
 
-        // 1) Try exact match on value or visible text
+        // 1) Try exact match on data-country attribute (used by page's JavaScript)
         let match = options.find(
-          (o) => o.value === search || o.text.trim() === search,
+          (o) => o.getAttribute('data-country')?.toLowerCase() === searchLower,
         );
 
-        // 2) Fallback: case-insensitive "contains" on value or text
+        // 2) Try exact match on value or visible text
         if (!match) {
           match = options.find(
-            (o) =>
-              o.value.toLowerCase().includes(searchLower) ||
-              o.text.toLowerCase().includes(searchLower),
+            (o) => o.value === search || o.text.trim() === search,
           );
         }
 
-        // 3) If search is numeric, try exact value match again
+        // 3) Fallback: case-insensitive "contains" on data-country, value, or text
+        if (!match) {
+          match = options.find((o) => {
+            const dataCountry =
+              o.getAttribute('data-country')?.toLowerCase() || '';
+            return (
+              dataCountry.includes(searchLower) ||
+              o.value.toLowerCase().includes(searchLower) ||
+              o.text.toLowerCase().includes(searchLower)
+            );
+          });
+        }
+
+        // 4) If search is numeric, try exact value match again
         if (!match && !isNaN(Number(search))) {
           match = options.find((o) => o.value === search);
         }
@@ -132,5 +152,196 @@ export class SearchSelectFiller extends TextFiller {
         domSnapshot: await this.captureDOMSnapshot(locator),
       };
     }
+  }
+
+  /**
+   * When the field is a <select> or Bootstrap selectpicker, verify using selected option
+   * (so DOM fill success is accepted instead of failing on TextFiller's inputValue()).
+   */
+  protected async verifyFill(
+    field: AutomatedField,
+  ): Promise<VerificationResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        passed: false,
+        actual: undefined,
+        expected: String(field.value),
+        reason: 'No locator available for verification',
+      };
+    }
+
+    try {
+      const isSelectOrBootstrap = await locator.evaluate((el: Element) => {
+        if (el.tagName === 'SELECT') return true;
+        if (
+          el.tagName === 'BUTTON' &&
+          (el.getAttribute('data-id') ||
+            el.classList.contains('dropdown-toggle'))
+        )
+          return true;
+        return false;
+      });
+
+      if (isSelectOrBootstrap) {
+        const actual = await locator.evaluate((el: Element) => {
+          if (el.tagName === 'SELECT') {
+            const selectEl = el as HTMLSelectElement;
+            return (
+              selectEl.options[selectEl.selectedIndex]?.text?.trim() ||
+              selectEl.value ||
+              ''
+            );
+          }
+          if (el.tagName === 'BUTTON') {
+            const filterOption = el.querySelector('.filter-option-inner-inner');
+            if (filterOption?.textContent)
+              return filterOption.textContent.trim();
+            const dataId = el.getAttribute('data-id');
+            if (dataId) {
+              const hiddenSelect = document.querySelector(
+                `select[id="${dataId}"]`,
+              ) as HTMLSelectElement;
+              if (hiddenSelect?.selectedIndex >= 0)
+                return (
+                  hiddenSelect.options[
+                    hiddenSelect.selectedIndex
+                  ]?.text?.trim() ||
+                  hiddenSelect.value ||
+                  ''
+                );
+            }
+            return el.textContent?.trim() || '';
+          }
+          return '';
+        });
+        const expected = String(field.value ?? '').trim();
+        const actualLower = (actual ?? '').toLowerCase();
+        const expectedLower = expected.toLowerCase();
+        const passed =
+          actualLower === expectedLower ||
+          actualLower.includes(expectedLower) ||
+          expectedLower.includes(actualLower);
+        return {
+          passed,
+          actual: actual ?? undefined,
+          expected,
+          reason: passed
+            ? undefined
+            : 'Selected option does not match expected value',
+        };
+      }
+
+      return await super.verifyFill(field);
+    } catch (error) {
+      return {
+        passed: false,
+        actual: undefined,
+        expected: String(field.value),
+        reason: `Verification failed: ${String(error)}`,
+      };
+    }
+  }
+
+  /**
+   * When Bootstrap selectpicker is detected, use Bootstrap select path (click dropdown, search, select)
+   * instead of TextFiller's generic fill so we don't return UNKNOWN and skip.
+   */
+  protected async tryUILibraryFill(field: AutomatedField): Promise<FillResult> {
+    const locator = this.getLocator(field);
+    if (!locator) {
+      return {
+        success: false,
+        strategy: FillStrategy.UI_LIBRARY,
+        error: 'No locator available',
+      };
+    }
+
+    const library = await this.detectLibrary(locator);
+    const displayText = String(field.value ?? '').trim();
+
+    if (library === UILibrary.BOOTSTRAP) {
+      try {
+        await this.scrollToLocator(locator);
+        await locator.click();
+        await this.page.waitForTimeout(400);
+
+        const ariaOwns = await locator.getAttribute('aria-owns');
+        const dropdownMenuSelector = ariaOwns
+          ? `#${ariaOwns}, .dropdown-menu.show`
+          : '.dropdown-menu.show, .inner.show';
+        let dropdownVisible = false;
+        try {
+          dropdownVisible = await this.page
+            .locator(dropdownMenuSelector)
+            .first()
+            .isVisible({ timeout: 500 });
+        } catch {
+          dropdownVisible = false;
+        }
+        if (!dropdownVisible) {
+          await this.page.keyboard.press('ArrowDown');
+          await this.page.waitForTimeout(300);
+        }
+
+        const searchBox = this.page.locator(
+          '.bs-searchbox input:visible, .dropdown-menu.show input[type="search"]:visible',
+        );
+        let hasSearchBox = false;
+        try {
+          hasSearchBox = (await searchBox.count()) > 0;
+        } catch {
+          hasSearchBox = false;
+        }
+
+        if (hasSearchBox) {
+          await searchBox.first().fill(displayText);
+          await this.page.waitForTimeout(400);
+        }
+
+        const activeOptions =
+          '.dropdown-menu.show .dropdown-item.active, .dropdown-menu.show li.active a, .inner.show .active, .dropdown-menu.show .active';
+        const option = this.page.locator(activeOptions);
+        if ((await option.count()) > 0) {
+          await option.first().click();
+        } else {
+          const textOption = this.page.locator(
+            `.dropdown-menu.show >> text="${displayText}"`,
+          );
+          if ((await textOption.count()) > 0) {
+            await textOption.first().click();
+          } else {
+            const innerOption = this.page.locator(
+              `.inner.show >> text="${displayText}"`,
+            );
+            if ((await innerOption.count()) > 0) {
+              await innerOption.first().click();
+            } else {
+              return {
+                success: false,
+                strategy: FillStrategy.UI_LIBRARY,
+                uiLibrary: library,
+                error: `No option matching "${displayText}" found in Bootstrap Select`,
+              };
+            }
+          }
+        }
+
+        return {
+          success: true,
+          strategy: FillStrategy.UI_LIBRARY,
+          uiLibrary: library,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          strategy: FillStrategy.UI_LIBRARY,
+          uiLibrary: library,
+          error: String(error),
+        };
+      }
+    }
+
+    return await super.tryUILibraryFill(field);
   }
 }

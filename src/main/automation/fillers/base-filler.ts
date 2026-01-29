@@ -1,5 +1,3 @@
-
-
 import { Page } from 'playwright-core';
 import { logger } from '../../core/logger';
 import { FieldResolver } from '../utils/field-resolver';
@@ -7,10 +5,10 @@ import { CanonicalField } from '../../../shared/types/automation.types';
 
 // Strategy: How we attempt to fill (broad categories)
 export enum FillStrategy {
-  NATIVE = 'native',           // Playwright's built-in methods
-  DOM = 'dom',                 // Direct DOM manipulation
-  UI_LIBRARY = 'ui-library',   // Library-specific handlers
-  KEYBOARD = 'keyboard'        // Human-like keyboard input
+  NATIVE = 'native', // Playwright's built-in methods
+  DOM = 'dom', // Direct DOM manipulation
+  UI_LIBRARY = 'ui-library', // Library-specific handlers
+  KEYBOARD = 'keyboard', // Human-like keyboard input
 }
 
 // UI Library: What framework is detected (specific implementations)
@@ -22,7 +20,7 @@ export enum UILibrary {
   TOM_SELECT = 'tom-select',
   ANTD = 'antd',
   CHAKRA = 'chakra',
-  UNKNOWN = 'unknown'
+  UNKNOWN = 'unknown',
 }
 
 // Result of a fill attempt
@@ -50,33 +48,36 @@ export interface VerificationResult {
 }
 
 export interface AutomatedField {
-    fieldIndex: number;
-    fieldName: string;
-    fieldLabel: string;
-    fieldType: string;
-    selector?: string;  // Optional - kept for backward compatibility
-    value: unknown;
-    confidence?: string;
-    reasoning?: string;
-    // New semantic fields
-    fieldId?: string;  // Primary identifier from canonical schema
-    accessibleName?: string;  // Semantic name for field discovery
-    role?: string;  // ARIA role
-    labels?: {
-      labelText?: string | null;
-      ariaLabel?: string | null;
-      placeholder?: string | null;
-    };
-    // Resolved locator (set by FieldResolver)
-    resolvedLocator?: any;
-    resolvedStrategy?: string;
+  fieldIndex: number;
+  fieldName: string;
+  fieldLabel: string;
+  fieldType: string;
+  selector?: string; // Optional - kept for backward compatibility
+  value: unknown;
+  confidence?: string;
+  reasoning?: string;
+  // New semantic fields
+  fieldId?: string; // Primary identifier from canonical schema
+  accessibleName?: string; // Semantic name for field discovery
+  role?: string; // ARIA role
+  labels?: {
+    labelText?: string | null;
+    ariaLabel?: string | null;
+    placeholder?: string | null;
+  };
+  // Resolved locator (set by FieldResolver)
+  resolvedLocator?: any;
+  resolvedStrategy?: string;
 }
 
 export abstract class BaseFiller {
   protected fieldResolver: FieldResolver;
   protected canonicalField?: CanonicalField;
 
-  constructor(protected page: Page, protected options: Record<string, unknown> = {}) {
+  constructor(
+    protected page: Page,
+    protected options: Record<string, unknown> = {},
+  ) {
     this.fieldResolver = new FieldResolver(page);
   }
 
@@ -90,11 +91,11 @@ export abstract class BaseFiller {
   /**
    * Main fill method - progressive resolution with EARLY EXIT
    * Uses SEMANTIC-FIRST field discovery (Playwright best practice)
-   * 
+   *
    * RESOLUTION PRIORITY:
    * 1. Semantic discovery via FieldResolver (getByRole, getByLabel, etc.) - PRIMARY
    * 2. Selector fallback - ONLY if semantic discovery fails - FALLBACK
-   * 
+   *
    * Fill strategy order: NATIVE → DOM → UI_LIBRARY → KEYBOARD (with retry)
    */
   async fill(field: AutomatedField): Promise<boolean> {
@@ -107,24 +108,28 @@ export abstract class BaseFiller {
     // Use FieldResolver to find field via semantic locators (getByRole, getByLabel, etc.)
     // This is the PRIMARY resolution path - selectors are FALLBACK only
     if (this.canonicalField && !field.resolvedLocator) {
-      const resolved = await this.fieldResolver.resolveField(this.canonicalField);
+      const resolved = await this.fieldResolver.resolveField(
+        this.canonicalField,
+      );
       if (resolved) {
         field.resolvedLocator = resolved.locator;
         field.resolvedStrategy = resolved.strategy;
-        logger.debug(`[PRIMARY] Resolved field "${field.fieldLabel}" using semantic strategy: ${resolved.strategy}`);
+        logger.debug(
+          `[PRIMARY] Resolved field "${field.fieldLabel}" using semantic strategy: ${resolved.strategy}`,
+        );
       } else {
         // Semantic discovery failed - try FALLBACK selector if available
         if (field.selector) {
           logger.warn(
             `[FALLBACK] Semantic discovery failed for "${field.fieldLabel}", ` +
-            `using selector fallback: ${field.selector}`
+              `using selector fallback: ${field.selector}`,
           );
           field.resolvedLocator = this.page.locator(field.selector);
           field.resolvedStrategy = `FALLBACK:selector("${field.selector}")`;
         } else {
           logger.error(
             `Cannot resolve field "${field.fieldLabel}" - ` +
-            `semantic discovery failed and no fallback selector available`
+              `semantic discovery failed and no fallback selector available`,
           );
           return false;
         }
@@ -134,53 +139,118 @@ export abstract class BaseFiller {
       // This should be rare - ideally all fields have canonical data
       logger.warn(
         `[FALLBACK] No canonical field for "${field.fieldLabel}", ` +
-        `using selector fallback: ${field.selector}`
+          `using selector fallback: ${field.selector}`,
       );
       field.resolvedLocator = this.page.locator(field.selector);
       field.resolvedStrategy = `FALLBACK:selector("${field.selector}")`;
     }
 
     if (!field.resolvedLocator) {
-      logger.error(`Cannot fill field "${field.fieldLabel}" - no locator available (semantic or fallback)`);
+      logger.error(
+        `Cannot fill field "${field.fieldLabel}" - no locator available (semantic or fallback)`,
+      );
       return false;
     }
-    
+
+    // Fail-fast timeout per strategy (avoids long stalls on click/fill/type)
+    const actionTimeoutMs =
+      (this.options?.fieldActionTimeout as number) ?? 30000;
+
     // Define strategy chain for clear logging
-    const strategies: Array<{ name: string; executor: () => Promise<FillResult> }> = [
-      { name: 'NATIVE', executor: () => this.tryNativeFill(field) },
-      { name: 'DOM', executor: () => this.tryDomFill(field) },
-      { name: 'UI_LIBRARY', executor: () => this.tryUILibraryFill(field) },
-      { name: 'KEYBOARD_1', executor: () => this.tryKeyboardFill(field, 0) },
-      { name: 'KEYBOARD_2', executor: () => this.tryKeyboardFill(field, 1) },
+    const strategies: Array<{
+      name: string;
+      strategy: FillStrategy;
+      executor: () => Promise<FillResult>;
+    }> = [
+      {
+        name: 'NATIVE',
+        strategy: FillStrategy.NATIVE,
+        executor: () => this.tryNativeFill(field),
+      },
+      {
+        name: 'DOM',
+        strategy: FillStrategy.DOM,
+        executor: () => this.tryDomFill(field),
+      },
+      {
+        name: 'UI_LIBRARY',
+        strategy: FillStrategy.UI_LIBRARY,
+        executor: () => this.tryUILibraryFill(field),
+      },
+      {
+        name: 'KEYBOARD_1',
+        strategy: FillStrategy.KEYBOARD,
+        executor: () => this.tryKeyboardFill(field, 0),
+      },
+      {
+        name: 'KEYBOARD_2',
+        strategy: FillStrategy.KEYBOARD,
+        executor: () => this.tryKeyboardFill(field, 1),
+      },
     ];
 
     // Try each strategy in order with early exit on success + verification
     for (const strategy of strategies) {
-      logger.debug(`Trying ${strategy.name} strategy for field: ${field.fieldLabel}`);
-      
-      const result = await strategy.executor();
+      logger.debug(
+        `Trying ${strategy.name} strategy for field: ${field.fieldLabel}`,
+      );
+
+      let result: FillResult;
+      try {
+        result = await Promise.race([
+          strategy.executor(),
+          new Promise<FillResult>((_, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error(`Strategy timeout after ${actionTimeoutMs}ms`),
+                ),
+              actionTimeoutMs,
+            ),
+          ),
+        ]);
+      } catch (timeoutOrOther: unknown) {
+        const err =
+          timeoutOrOther instanceof Error
+            ? timeoutOrOther
+            : new Error(String(timeoutOrOther));
+        result = {
+          success: false,
+          strategy: strategy.strategy,
+          error: err.message,
+          duration: Date.now() - startTime,
+        };
+      }
       result.duration = Date.now() - startTime;
       attempts.push(result);
 
       if (!result.success) {
         // Strategy failed, log and continue to next
-        logger.debug(`${strategy.name} failed for ${field.fieldLabel}: ${result.error || 'unknown error'}`);
+        logger.debug(
+          `${strategy.name} failed for ${field.fieldLabel}: ${result.error || 'unknown error'}`,
+        );
         continue;
       }
 
       // Strategy succeeded, now verify
-      logger.debug(`${strategy.name} reported success for ${field.fieldLabel}, verifying...`);
+      logger.debug(
+        `${strategy.name} reported success for ${field.fieldLabel}, verifying...`,
+      );
       const verification = await this.verifyFill(field);
       result.verificationPassed = verification.passed;
 
       if (verification.passed) {
         // SUCCESS + VERIFIED = EARLY EXIT
-        logger.info(`EARLY EXIT: ${strategy.name} succeeded and verified for ${field.fieldLabel}`);
+        logger.info(
+          `EARLY EXIT: ${strategy.name} succeeded and verified for ${field.fieldLabel}`,
+        );
         this.logSuccess(field, attempts, verification);
         return true;
       } else {
         // Strategy succeeded but verification failed, continue to next strategy
-        logger.debug(`${strategy.name} succeeded but verification failed for ${field.fieldLabel}: ${verification.reason}`);
+        logger.debug(
+          `${strategy.name} succeeded but verification failed for ${field.fieldLabel}: ${verification.reason}`,
+        );
       }
     }
 
@@ -192,28 +262,38 @@ export abstract class BaseFiller {
   // Abstract methods - must be implemented by subclasses
   protected abstract tryNativeFill(field: AutomatedField): Promise<FillResult>;
   protected abstract tryDomFill(field: AutomatedField): Promise<FillResult>;
-  protected abstract tryUILibraryFill(field: AutomatedField): Promise<FillResult>;
-  protected abstract tryKeyboardFill(field: AutomatedField, retryCount: number): Promise<FillResult>;
-  protected abstract verifyFill(field: AutomatedField): Promise<VerificationResult>;
+  protected abstract tryUILibraryFill(
+    field: AutomatedField,
+  ): Promise<FillResult>;
+  protected abstract tryKeyboardFill(
+    field: AutomatedField,
+    retryCount: number,
+  ): Promise<FillResult>;
+  protected abstract verifyFill(
+    field: AutomatedField,
+  ): Promise<VerificationResult>;
 
   // Helper methods
   protected async detectLibrary(locatorOrSelector: any): Promise<UILibrary> {
     try {
       // Handle both locator and selector
-      const selector = typeof locatorOrSelector === 'string' 
-        ? locatorOrSelector 
-        : await locatorOrSelector.evaluate((el: Element) => {
-            // Generate a selector for the element
-            // Use attribute selector for IDs with special characters to avoid CSS parsing errors
-            if (el.id) {
-              const id = el.id;
-              return /[!"#$%&'()*+,.\/:;<=>?@[\\\]^`{|}~ ]/.test(id)
-                ? `[id="${id.replace(/"/g, '\\"')}"]`
-                : `#${id}`;
-            }
-            if (el.className) return `.${Array.from(el.classList)[0]}`;
-            return el.tagName.toLowerCase();
-          }).catch(() => '');
+      const selector =
+        typeof locatorOrSelector === 'string'
+          ? locatorOrSelector
+          : await locatorOrSelector
+              .evaluate((el: Element) => {
+                // Generate a selector for the element
+                // Use attribute selector for IDs with special characters to avoid CSS parsing errors
+                if (el.id) {
+                  const id = el.id;
+                  return /[!"#$%&'()*+,.\/:;<=>?@[\\\]^`{|}~ ]/.test(id)
+                    ? `[id="${id.replace(/"/g, '\\"')}"]`
+                    : `#${id}`;
+                }
+                if (el.className) return `.${Array.from(el.classList)[0]}`;
+                return el.tagName.toLowerCase();
+              })
+              .catch(() => '');
 
       if (!selector) return UILibrary.UNKNOWN;
 
@@ -222,30 +302,37 @@ export abstract class BaseFiller {
         if (!el) return UILibrary.UNKNOWN;
 
         // Material UI
-        if (el.closest('.MuiInputBase-root') || 
-            el.closest('.MuiTextField-root') ||
-            el.classList.contains('MuiInput-input')) {
+        if (
+          el.closest('.MuiInputBase-root') ||
+          el.closest('.MuiTextField-root') ||
+          el.classList.contains('MuiInput-input')
+        ) {
           return UILibrary.MATERIAL_UI;
         }
 
-        // Bootstrap / Bootstrap Select
-        if (el.classList.contains('selectpicker') ||
-            el.classList.contains('select2') ||
-            el.closest('.bootstrap-select') ||
-            // Bootstrap Select: button with dropdown-toggle class and data-id attribute
-            (el.tagName === 'BUTTON' && 
-             el.classList.contains('dropdown-toggle') &&
-             el.hasAttribute('data-id')) ||
-            // Bootstrap 5 style: button triggers with data-bs-toggle
-            (el.tagName === 'BUTTON' && 
-             el.getAttribute('data-bs-toggle') === 'dropdown' &&
-             el.getAttribute('role') === 'combobox')) {
+        // Bootstrap / Bootstrap Select / Bootstrap datetimepicker
+        if (
+          el.classList.contains('selectpicker') ||
+          el.classList.contains('select2') ||
+          el.closest('.bootstrap-select') ||
+          // Bootstrap Select: button with dropdown-toggle class and data-id attribute
+          (el.tagName === 'BUTTON' &&
+            el.classList.contains('dropdown-toggle') &&
+            el.hasAttribute('data-id')) ||
+          // Bootstrap 5 style: button triggers with data-bs-toggle
+          (el.tagName === 'BUTTON' &&
+            el.getAttribute('data-bs-toggle') === 'dropdown' &&
+            el.getAttribute('role') === 'combobox') ||
+          // Bootstrap datetimepicker: input with type="datetime" and form-control class
+          (el.tagName === 'INPUT' &&
+            (el as HTMLInputElement).type === 'datetime' &&
+            el.classList.contains('form-control'))
+        ) {
           return UILibrary.BOOTSTRAP;
         }
 
         // Select2
-        if (el.closest('.select2-container') ||
-            (el as any).select2) {
+        if (el.closest('.select2-container') || (el as any).select2) {
           return UILibrary.SELECT2;
         }
 
@@ -255,29 +342,35 @@ export abstract class BaseFiller {
         }
 
         // Ant Design
-        if (el.closest('.ant-select') ||
-            el.closest('.ant-input') ||
-            el.classList.contains('ant-input')) {
+        if (
+          el.closest('.ant-select') ||
+          el.closest('.ant-input') ||
+          el.classList.contains('ant-input')
+        ) {
           return UILibrary.ANTD;
         }
 
         // Chakra UI
-        if (el.closest('[data-chakra-component]') ||
-            el.classList.contains('chakra-input')) {
+        if (
+          el.closest('[data-chakra-component]') ||
+          el.classList.contains('chakra-input')
+        ) {
           return UILibrary.CHAKRA;
         }
 
         // Vanilla HTML
         return UILibrary.VANILLA;
       }, selector);
-      
+
       return result as UILibrary;
     } catch {
       return UILibrary.UNKNOWN;
     }
   }
 
-  protected async captureDOMSnapshot(locatorOrSelector: any): Promise<FillResult['domSnapshot']> {
+  protected async captureDOMSnapshot(
+    locatorOrSelector: any,
+  ): Promise<FillResult['domSnapshot']> {
     try {
       // Handle both locator and selector
       if (typeof locatorOrSelector === 'string') {
@@ -307,7 +400,11 @@ export abstract class BaseFiller {
     }
   }
 
-  protected logSuccess(field: AutomatedField, attempts: FillResult[], verification: VerificationResult): void {
+  protected logSuccess(
+    field: AutomatedField,
+    attempts: FillResult[],
+    verification: VerificationResult,
+  ): void {
     const successAttempt = attempts[attempts.length - 1];
     logger.info('Fill succeeded (early exit)', {
       field: field.fieldLabel,
@@ -316,7 +413,12 @@ export abstract class BaseFiller {
       successStrategy: successAttempt.strategy,
       uiLibrary: successAttempt.uiLibrary,
       verificationPassed: verification.passed,
-      attemptSequence: attempts.map(a => `${a.strategy}:${a.success ? 'ok' : 'fail'}${a.verificationPassed !== undefined ? (a.verificationPassed ? ':verified' : ':verify-fail') : ''}`).join(' → '),
+      attemptSequence: attempts
+        .map(
+          (a) =>
+            `${a.strategy}:${a.success ? 'ok' : 'fail'}${a.verificationPassed !== undefined ? (a.verificationPassed ? ':verified' : ':verify-fail') : ''}`,
+        )
+        .join(' → '),
     });
   }
 
@@ -326,7 +428,7 @@ export abstract class BaseFiller {
       selector: field.selector,
       value: field.value,
       totalAttempts: attempts.length,
-      attempts: attempts.map(a => ({
+      attempts: attempts.map((a) => ({
         strategy: a.strategy,
         success: a.success,
         uiLibrary: a.uiLibrary,
@@ -348,6 +450,9 @@ export abstract class BaseFiller {
   }
 
   protected getLocator(field: AutomatedField): any {
-    return field.resolvedLocator || (field.selector ? this.page.locator(field.selector) : null);
+    return (
+      field.resolvedLocator ||
+      (field.selector ? this.page.locator(field.selector) : null)
+    );
   }
 }

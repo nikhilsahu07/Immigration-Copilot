@@ -1,12 +1,37 @@
 // IPC Contract Types - Request/Response types for Electron IPC
 
 import { Company, UpdateCompanyInput } from './company.types';
-import { AgentPublic, CreateAgentInput, LoginInput, RegisterInput, LoginResponse, UpdateAgentInput } from './agent.types';
-import { Client, CreateClientInput, UpdateClientInput, ClientWithDocumentCount } from './client.types';
-import { UploadDocumentInput, DocumentWithPresignedUrl } from './document.types';
-import { Extraction, CreateExtractionInput, ApproveExtractionInput, RejectExtractionInput } from './extraction.types';
+import {
+  AgentPublic,
+  CreateAgentInput,
+  LoginInput,
+  RegisterInput,
+  LoginResponse,
+  UpdateAgentInput,
+} from './agent.types';
+import {
+  Client,
+  CreateClientInput,
+  UpdateClientInput,
+  ClientWithDocumentCount,
+} from './client.types';
+import {
+  UploadDocumentInput,
+  DocumentWithPresignedUrl,
+} from './document.types';
+import {
+  Extraction,
+  CreateExtractionInput,
+  ApproveExtractionInput,
+  RejectExtractionInput,
+} from './extraction.types';
 import { Portal, CreatePortalInput, UpdatePortalInput } from './portal.types';
-import { AutomationJob, CreateJobInput, FormMapping, AutomationState } from './automation.types';
+import {
+  AutomationJob,
+  CreateJobInput,
+  FormMapping,
+  AutomationState,
+} from './automation.types';
 import { Result, PaginatedResult, PaginationParams } from './common.types';
 
 // Auth IPC
@@ -206,6 +231,14 @@ export interface AutomationIPC {
   getJobHistory: {
     request: PaginationParams;
     response: PaginatedResult<AutomationJob>;
+  };
+  retryFilling: {
+    request: void;
+    response: Result<void>;
+  };
+  canRetry: {
+    request: void;
+    response: Result<boolean>;
   };
 }
 
