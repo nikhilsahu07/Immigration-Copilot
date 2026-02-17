@@ -301,7 +301,11 @@ export function AutomationPage() {
           <h1 className="page-title">Automation</h1>
           <div className="flex gap-2">
             {browserViewShown && !isRunning && (
-              <Button variant="outline" onClick={handleStop} className="gap-2">
+              <Button
+                variant="outline"
+                onClick={handleStop}
+                className="gap-2 border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
+              >
                 <XCircle className="w-4 h-4" />
                 Exit Browser
               </Button>

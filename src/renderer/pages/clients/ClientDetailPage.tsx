@@ -1,11 +1,34 @@
-
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, Upload, Play, CheckCircle, Clock, Trash2, Loader2, Eye, Edit } from 'lucide-react';
-import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Separator, Input, Label } from '../../components/ui';
+import {
+  ArrowLeft,
+  FileText,
+  Upload,
+  Play,
+  CheckCircle,
+  Clock,
+  Trash2,
+  Loader2,
+  Eye,
+  Edit,
+} from 'lucide-react';
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  CardDescription,
+  Separator,
+  Input,
+  Label,
+} from '../../components/ui';
 import { useClientStore } from '../../stores';
 import { api } from '../../lib/api';
-import type { DocumentWithPresignedUrl, Extraction } from '../../../shared/types';
+import type {
+  DocumentWithPresignedUrl,
+  Extraction,
+} from '../../../shared/types';
 import { formatRelativeTime, formatFileSize } from '../../../shared/utils';
 import { COUNTRIES } from '../../../shared/constants';
 import { DocumentPreview } from '../../components/DocumentPreview';
@@ -13,12 +36,12 @@ import { DocumentPreview } from '../../components/DocumentPreview';
 export function ClientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { 
-    selectedClient, 
-    isLoading: clientLoading, 
-    getClient, 
+  const {
+    selectedClient,
+    isLoading: clientLoading,
+    getClient,
     updateClient,
-    deleteClient
+    deleteClient,
   } = useClientStore();
 
   const [documents, setDocuments] = useState<DocumentWithPresignedUrl[]>([]);
@@ -32,7 +55,8 @@ export function ClientDetailPage() {
 
   const [documentType, setDocumentType] = useState('passport');
   const [customName, setCustomName] = useState('');
-  const [previewDocument, setPreviewDocument] = useState<DocumentWithPresignedUrl | null>(null);
+  const [previewDocument, setPreviewDocument] =
+    useState<DocumentWithPresignedUrl | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingClient, setEditingClient] = useState({
@@ -101,13 +125,21 @@ export function ClientDetailPage() {
       // Read file as base64
       const fileBuffer = await selectedFile.arrayBuffer();
       const base64Content = btoa(
-        new Uint8Array(fileBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+        new Uint8Array(fileBuffer).reduce(
+          (data, byte) => data + String.fromCharCode(byte),
+          '',
+        ),
       );
 
       const result = await api.document.upload({
         clientId: id,
-        documentType: documentType as 'passport' | 'education' | 'employment' | 'financial' | 'identity' | 'other',
-        fileData: base64Content,
+        documentType: documentType as
+          | 'passport'
+          | 'education'
+          | 'employment'
+          | 'financial'
+          | 'identity'
+          | 'other',
         fileData: base64Content,
         fileName: selectedFile.name,
         mimeType: selectedFile.type,
@@ -115,7 +147,7 @@ export function ClientDetailPage() {
       });
 
       if (result.success && result.data) {
-        setDocuments(prev => [...prev, result.data!]);
+        setDocuments((prev) => [...prev, result.data!]);
         setShowUploadModal(false);
         setSelectedFile(null);
         setDocumentType('passport');
@@ -137,7 +169,7 @@ export function ClientDetailPage() {
     try {
       const result = await api.document.delete({ id: docId });
       if (result.success) {
-        setDocuments(prev => prev.filter(d => d._id !== docId));
+        setDocuments((prev) => prev.filter((d) => d._id !== docId));
       }
     } catch (err) {
       console.error('Failed to delete document:', err);
@@ -169,14 +201,20 @@ export function ClientDetailPage() {
     <div className="page-container">
       {/* Header */}
       <div className="page-header">
-        <Button variant="ghost" className="mb-4" onClick={() => navigate('/clients')}>
+        <Button
+          variant="ghost"
+          className="mb-4"
+          onClick={() => navigate('/clients')}
+        >
           <ArrowLeft className="w-4 h-4" />
           Back to Clients
         </Button>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center">
-              <span className="text-xl font-medium">{client.name.charAt(0)}</span>
+              <span className="text-xl font-medium">
+                {client.name.charAt(0)}
+              </span>
             </div>
             <div>
               <h1 className="page-title">{client.name}</h1>
@@ -184,14 +222,19 @@ export function ClientDetailPage() {
             </div>
           </div>
           <div className="flex gap-3">
-            <Button variant="outline" onClick={() => navigate(`/extraction/${id}`)}>
+            <Button
+              variant="outline"
+              onClick={() => navigate(`/extraction/${id}`)}
+            >
               <FileText className="w-4 h-4" />
               Extract Data
             </Button>
-            <Button onClick={() => navigate('/automation')}>
-              <Play className="w-4 h-4" />
-              Start Automation
-            </Button>
+            {extractions.some((ext) => ext.status === 'approved') && (
+              <Button onClick={() => navigate('/automation')}>
+                <Play className="w-4 h-4" />
+                Start Automation
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -203,24 +246,28 @@ export function ClientDetailPage() {
             <CardTitle className="flex items-center justify-between">
               Client Information
               <div className="flex gap-2">
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   size="icon"
                   className="text-destructive hover:text-destructive hover:bg-destructive/10"
                   onClick={async () => {
-                   if (confirm('Are you sure you want to delete this client? This action cannot be undone.')) {
-                     const success = await deleteClient(client._id);
-                     if (success) {
-                       navigate('/clients');
-                     }
-                   }
+                    if (
+                      confirm(
+                        'Are you sure you want to delete this client? This action cannot be undone.',
+                      )
+                    ) {
+                      const success = await deleteClient(client._id);
+                      if (success) {
+                        navigate('/clients');
+                      }
+                    }
                   }}
                   title="Delete Client"
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   size="icon"
                   onClick={() => {
                     setEditingClient({
@@ -229,7 +276,11 @@ export function ClientDetailPage() {
                       phone: client.phone || '',
                       nationality: client.nationality || '',
                       passportNumber: client.passportNumber || '',
-                      dateOfBirth: client.dateOfBirth ? new Date(client.dateOfBirth).toISOString().split('T')[0] : '',
+                      dateOfBirth: client.dateOfBirth
+                        ? new Date(client.dateOfBirth)
+                            .toISOString()
+                            .split('T')[0]
+                        : '',
                       visaCountry: client.visaCountry || '',
                     });
                     setShowEditModal(true);
@@ -249,26 +300,34 @@ export function ClientDetailPage() {
             <Separator />
             <div>
               <p className="text-sm text-muted-foreground">Nationality</p>
-              <p className="font-medium">{client.nationality || 'Not provided'}</p>
+              <p className="font-medium">
+                {client.nationality || 'Not provided'}
+              </p>
             </div>
             <Separator />
             <div>
               <p className="text-sm text-muted-foreground">Passport Number</p>
-              <p className="font-medium">{client.passportNumber || 'Not provided'}</p>
+              <p className="font-medium">
+                {client.passportNumber || 'Not provided'}
+              </p>
             </div>
             <Separator />
             <div>
               <p className="text-sm text-muted-foreground">Date of Birth</p>
               <p className="font-medium">
-                {client.dateOfBirth 
-                  ? new Date(client.dateOfBirth).toLocaleDateString() 
+                {client.dateOfBirth
+                  ? new Date(client.dateOfBirth).toLocaleDateString()
                   : 'Not provided'}
               </p>
             </div>
             <Separator />
             <div>
-              <p className="text-sm text-muted-foreground">Visa (Destination) Country</p>
-              <p className="font-medium">{client.visaCountry || 'Not provided'}</p>
+              <p className="text-sm text-muted-foreground">
+                Visa (Destination) Country
+              </p>
+              <p className="font-medium">
+                {client.visaCountry || 'Not provided'}
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -281,9 +340,15 @@ export function ClientDetailPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle>Documents</CardTitle>
-                  <CardDescription>{documents.length} uploaded documents</CardDescription>
+                  <CardDescription>
+                    {documents.length} uploaded documents
+                  </CardDescription>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setShowUploadModal(true)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowUploadModal(true)}
+                >
                   <Upload className="w-4 h-4" />
                   Upload
                 </Button>
@@ -301,8 +366,8 @@ export function ClientDetailPage() {
               ) : (
                 <div className="space-y-3">
                   {documents.map((doc) => (
-                    <div 
-                      key={doc._id} 
+                    <div
+                      key={doc._id}
                       className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
                       onClick={() => {
                         setPreviewDocument(doc);
@@ -314,16 +379,18 @@ export function ClientDetailPage() {
                           <FileText className="w-5 h-5 text-muted-foreground" />
                         </div>
                         <div>
-                          <p className="font-medium text-sm">{doc.originalName}</p>
+                          <p className="font-medium text-sm">
+                            {doc.originalName}
+                          </p>
                           <p className="text-xs text-muted-foreground capitalize">
                             {doc.documentType} • {formatFileSize(doc.fileSize)}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="text-muted-foreground hover:text-primary"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -333,9 +400,9 @@ export function ClientDetailPage() {
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="text-muted-foreground hover:text-destructive"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -358,11 +425,13 @@ export function ClientDetailPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle>Data Extractions</CardTitle>
-                  <CardDescription>AI-extracted data from documents</CardDescription>
+                  <CardDescription>
+                    AI-extracted data from documents
+                  </CardDescription>
                 </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => navigate(`/extraction/${id}`)}
                   disabled={documents.length === 0}
                 >
@@ -383,7 +452,10 @@ export function ClientDetailPage() {
               ) : (
                 <div className="space-y-3">
                   {extractions.map((ext) => (
-                    <div key={ext._id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                    <div
+                      key={ext._id}
+                      className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                    >
                       <div className="flex items-center gap-3">
                         {ext.status === 'approved' ? (
                           <div className="w-10 h-10 rounded bg-green-50 flex items-center justify-center">
@@ -399,13 +471,15 @@ export function ClientDetailPage() {
                           </div>
                         )}
                         <div>
-                          <p className="font-medium text-sm capitalize">{ext.status}</p>
+                          <p className="font-medium text-sm capitalize">
+                            {ext.status}
+                          </p>
                           <p className="text-xs text-muted-foreground">
-                            {ext.status === 'approved' 
-                              ? 'Ready for automation' 
+                            {ext.status === 'approved'
+                              ? 'Ready for automation'
                               : ext.status === 'rejected'
-                              ? ext.rejectionReason || 'Rejected'
-                              : 'Pending review'}
+                                ? ext.rejectionReason || 'Rejected'
+                                : 'Pending review'}
                           </p>
                         </div>
                       </div>
@@ -413,10 +487,14 @@ export function ClientDetailPage() {
                         <span className="text-xs text-muted-foreground">
                           {formatRelativeTime(ext.createdAt)}
                         </span>
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           size="sm"
-                          onClick={() => navigate(`/extraction/${id}?extractionId=${ext._id}`)}
+                          onClick={() =>
+                            navigate(
+                              `/extraction/${id}?extractionId=${ext._id}`,
+                            )
+                          }
                         >
                           View
                         </Button>
@@ -471,7 +549,8 @@ export function ClientDetailPage() {
                 />
                 {selectedFile && (
                   <p className="text-xs text-muted-foreground">
-                    Selected: {selectedFile.name} ({formatFileSize(selectedFile.size)})
+                    Selected: {selectedFile.name} (
+                    {formatFileSize(selectedFile.size)})
                   </p>
                 )}
               </div>
@@ -480,11 +559,14 @@ export function ClientDetailPage() {
               )}
             </CardContent>
             <div className="flex justify-end gap-3 p-6 pt-0">
-              <Button variant="outline" onClick={() => setShowUploadModal(false)}>
+              <Button
+                variant="outline"
+                onClick={() => setShowUploadModal(false)}
+              >
                 Cancel
               </Button>
-              <Button 
-                onClick={handleUpload} 
+              <Button
+                onClick={handleUpload}
                 disabled={!selectedFile || isUploading}
               >
                 {isUploading && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -507,7 +589,7 @@ export function ClientDetailPage() {
 
       {/* Edit Client Modal */}
       {showEditModal && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
           onClick={(e) => {
             if (e.target === e.currentTarget) setShowEditModal(false);
@@ -518,26 +600,33 @@ export function ClientDetailPage() {
               <CardTitle>Edit Client</CardTitle>
               <CardDescription>Update the client's information</CardDescription>
             </CardHeader>
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              if (!id) return;
-              setIsUpdating(true);
-              try {
-                await updateClient(id, editingClient);
-                setShowEditModal(false);
-              } catch (err) {
-                console.error('Failed to update client:', err);
-              } finally {
-                setIsUpdating(false);
-              }
-            }}>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!id) return;
+                setIsUpdating(true);
+                try {
+                  await updateClient(id, editingClient);
+                  setShowEditModal(false);
+                } catch (err) {
+                  console.error('Failed to update client:', err);
+                } finally {
+                  setIsUpdating(false);
+                }
+              }}
+            >
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-name">Full Name *</Label>
                   <Input
                     id="edit-name"
                     value={editingClient.name}
-                    onChange={(e) => setEditingClient(prev => ({ ...prev, name: e.target.value }))}
+                    onChange={(e) =>
+                      setEditingClient((prev) => ({
+                        ...prev,
+                        name: e.target.value,
+                      }))
+                    }
                     required
                   />
                 </div>
@@ -548,7 +637,12 @@ export function ClientDetailPage() {
                       id="edit-email"
                       type="email"
                       value={editingClient.email}
-                      onChange={(e) => setEditingClient(prev => ({ ...prev, email: e.target.value }))}
+                      onChange={(e) =>
+                        setEditingClient((prev) => ({
+                          ...prev,
+                          email: e.target.value,
+                        }))
+                      }
                       required
                     />
                   </div>
@@ -558,7 +652,12 @@ export function ClientDetailPage() {
                       id="edit-phone"
                       type="tel"
                       value={editingClient.phone}
-                      onChange={(e) => setEditingClient(prev => ({ ...prev, phone: e.target.value }))}
+                      onChange={(e) =>
+                        setEditingClient((prev) => ({
+                          ...prev,
+                          phone: e.target.value,
+                        }))
+                      }
                       required
                     />
                   </div>
@@ -569,7 +668,12 @@ export function ClientDetailPage() {
                     <select
                       id="edit-nationality"
                       value={editingClient.nationality}
-                      onChange={(e) => setEditingClient(prev => ({ ...prev, nationality: e.target.value }))}
+                      onChange={(e) =>
+                        setEditingClient((prev) => ({
+                          ...prev,
+                          nationality: e.target.value,
+                        }))
+                      }
                       className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
                     >
                       <option value="">Select country...</option>
@@ -585,7 +689,12 @@ export function ClientDetailPage() {
                     <Input
                       id="edit-passport"
                       value={editingClient.passportNumber}
-                      onChange={(e) => setEditingClient(prev => ({ ...prev, passportNumber: e.target.value }))}
+                      onChange={(e) =>
+                        setEditingClient((prev) => ({
+                          ...prev,
+                          passportNumber: e.target.value,
+                        }))
+                      }
                     />
                   </div>
                 </div>
@@ -596,15 +705,27 @@ export function ClientDetailPage() {
                       id="edit-dob"
                       type="date"
                       value={editingClient.dateOfBirth}
-                      onChange={(e) => setEditingClient(prev => ({ ...prev, dateOfBirth: e.target.value }))}
+                      onChange={(e) =>
+                        setEditingClient((prev) => ({
+                          ...prev,
+                          dateOfBirth: e.target.value,
+                        }))
+                      }
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-visaCountry">Visa (Destination) Country</Label>
+                    <Label htmlFor="edit-visaCountry">
+                      Visa (Destination) Country
+                    </Label>
                     <select
                       id="edit-visaCountry"
                       value={editingClient.visaCountry}
-                      onChange={(e) => setEditingClient(prev => ({ ...prev, visaCountry: e.target.value }))}
+                      onChange={(e) =>
+                        setEditingClient((prev) => ({
+                          ...prev,
+                          visaCountry: e.target.value,
+                        }))
+                      }
                       className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
                     >
                       <option value="">Select country...</option>
@@ -618,7 +739,11 @@ export function ClientDetailPage() {
                 </div>
               </CardContent>
               <div className="flex justify-end gap-3 p-6 pt-0">
-                <Button type="button" variant="outline" onClick={() => setShowEditModal(false)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowEditModal(false)}
+                >
                   Cancel
                 </Button>
                 <Button type="submit" disabled={isUpdating}>

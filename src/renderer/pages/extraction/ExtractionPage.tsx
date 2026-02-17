@@ -2,10 +2,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, FileText, Loader2, CheckCircle, XCircle, Edit, AlertCircle, Eye, Trash2, Plus } from 'lucide-react';
-import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Label } from '../../components/ui';
+import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Label, Input } from '../../components/ui';
 import { api } from '../../lib/api';
 import type { Extraction, DocumentWithPresignedUrl } from '../../../shared/types';
-import { PromptInput } from '../../components/PromptInput';
 import { DocumentPreview } from '../../components/DocumentPreview';
 import { formatRelativeTime } from '../../../shared/utils';
 import { COUNTRIES } from '../../../shared/constants/countries.constants';
@@ -537,27 +536,26 @@ export function ExtractionPage() {
 
                 {/* Custom Prompt Input */}
                 <div className="pt-2 border-t">
-                  <Label className="text-sm text-muted-foreground mb-2 block">
+                  <Label htmlFor="customPrompt" className="text-sm text-muted-foreground mb-2 block">
                     Additional Instructions (Optional)
                   </Label>
-                  <PromptInput
+                  <Input
+                    id="customPrompt"
+                    type="text"
                     placeholder="E.g., 'Focus on education details' or 'Make sure to extract visa history'"
-                    onSubmit={(prompt) => setCustomPrompt(prompt)}
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        // Trigger extraction directly on Enter if documents are selected
+                        if (selectedDocIds.length > 0 && !isExtracting) {
+                          handleStartExtraction();
+                        }
+                      }
+                    }}
                     disabled={isExtracting}
                   />
-                  {customPrompt && (
-                    <div className="mt-2 p-2 rounded bg-primary/10 text-sm text-primary flex items-center justify-between">
-                      <span className="truncate">{customPrompt}</span>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        onClick={() => setCustomPrompt('')}
-                        className="h-6 px-2"
-                      >
-                        Clear
-                      </Button>
-                    </div>
-                  )}
                 </div>
 
                 <Button 
