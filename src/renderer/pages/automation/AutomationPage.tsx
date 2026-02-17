@@ -87,7 +87,6 @@ export function AutomationPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
-  const [selectedModel, setSelectedModel] = useState('gemini-3-flash-preview');
 
   useEffect(() => {
     fetchClients();
@@ -237,7 +236,6 @@ export function AutomationPage() {
       extractionId: approvedExtraction._id,
       customPrompt: customPrompt || undefined,
       attachScreenshots,
-      modelName: selectedModel,
     });
   };
 
@@ -388,28 +386,6 @@ export function AutomationPage() {
                       ))}
                     </select>
                   )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Gemini Model</Label>
-                  <select
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="gemini-3-flash-preview">
-                      gemini-3-flash-preview (Default)
-                    </option>
-                    <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-                    <option value="gemini-2.0-flash-exp">
-                      gemini-2.0-flash-exp
-                    </option>
-                    <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-                    <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-                  </select>
-                  <p className="text-xs text-muted-foreground">
-                    Select the Gemini model to use for form automation
-                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -815,38 +791,20 @@ export function AutomationPage() {
       </div>
 
       {/* Right Panel - Browser Preview Placeholder */}
-      <div className="split-view-right flex items-center justify-center">
-        <div className="text-center text-muted-foreground">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
-            <Globe className="w-8 h-8" />
-          </div>
-          <p className="text-lg font-medium">Browser Preview</p>
-          <div className="text-sm">
-            {browserViewShown || isRunning ? (
-              <div className="space-y-4">
-                <p>The portal is displayed in the embedded browser view</p>
-                {!isRunning && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedPortal('');
-                      hidePreview();
-                      setBrowserViewShown(false);
-                    }}
-                    className="gap-2"
-                  >
-                    <Square className="w-4 h-4" />
-                    Close Preview
-                  </Button>
-                )}
-              </div>
-            ) : (
+      {/* Hide placeholder when BrowserView is active - Electron BrowserView renders on top */}
+      {!(browserViewShown || isRunning) && (
+        <div className="split-view-right flex items-center justify-center">
+          <div className="text-center text-muted-foreground">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
+              <Globe className="w-8 h-8" />
+            </div>
+            <p className="text-lg font-medium">Browser Preview</p>
+            <div className="text-sm">
               <span>Select a portal to preview it here</span>
-            )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

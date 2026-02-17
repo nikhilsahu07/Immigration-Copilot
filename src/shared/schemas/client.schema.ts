@@ -18,6 +18,7 @@ export const clientSchema = z.object({
   dateOfBirth: z.string().optional(),
   nationality: z.string().optional(),
   passportNumber: z.string().optional(),
+  visaCountry: z.string().optional(),
   gender: genderSchema.optional(),
   address: clientAddressSchema.optional(),
   customFields: z.record(z.unknown()).optional(),

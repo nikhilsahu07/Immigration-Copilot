@@ -6,6 +6,7 @@ import { downloadFromS3 } from '../../storage/s3-client';
 import { createExtractionSchema, approveExtractionSchema, rejectExtractionSchema } from '../../../shared/schemas';
 import { handleError, success, createError } from '../../core/error-handler';
 import { ERROR_CODES } from '../../../shared/constants';
+import { DEFAULT_GEMINI_MODEL } from '../../../shared/types';
 import { getCurrentSession } from '../../services/auth';
 import { logger } from '../../core/logger';
 
@@ -93,7 +94,8 @@ export function registerExtractionHandlers(): void {
         throw createError(ERROR_CODES.VALIDATION_ERROR, 'No active Gemini API key found. Please set one in Settings.');
       }
 
-      // Call Gemini for extraction (use default model: gemini-3-flash-preview)
+      // Call Gemini for extraction (model from active credential in Settings)
+      const modelName = activeCredential.modelName ?? DEFAULT_GEMINI_MODEL;
       const geminiResult = await geminiService.extractData(
         {
           clientInfo: { name: 'Client' }, // Would be fetched from client record
@@ -101,7 +103,7 @@ export function registerExtractionHandlers(): void {
           customPrompt: validated.customPrompt,
         },
         activeCredential.apiKey,
-        'gemini-3-flash-preview' // Default model for extraction
+        modelName
       );
 
       if (!geminiResult.success || !geminiResult.data) {

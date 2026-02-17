@@ -7,6 +7,7 @@ export interface Client extends BaseEntity, WithCompany, WithAgent {
   dateOfBirth?: Date;
   nationality?: string;
   passportNumber?: string;
+  visaCountry?: string;
   gender?: 'Male' | 'Female' | 'Other';
   address?: ClientAddress;
   customFields?: Record<string, unknown>;
@@ -32,6 +33,7 @@ export interface CreateClientInput {
   dateOfBirth?: string;
   nationality?: string;
   passportNumber?: string;
+  visaCountry?: string;
   gender?: 'Male' | 'Female' | 'Other';
   address?: ClientAddress;
   customFields?: Record<string, unknown>;
@@ -45,6 +47,7 @@ export interface UpdateClientInput {
   dateOfBirth?: string;
   nationality?: string;
   passportNumber?: string;
+  visaCountry?: string;
   gender?: 'Male' | 'Female' | 'Other';
   address?: ClientAddress;
   customFields?: Record<string, unknown>;

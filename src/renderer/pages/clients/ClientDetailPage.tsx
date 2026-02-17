@@ -42,6 +42,7 @@ export function ClientDetailPage() {
     nationality: '',
     passportNumber: '',
     dateOfBirth: '',
+    visaCountry: '',
   });
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -229,6 +230,7 @@ export function ClientDetailPage() {
                       nationality: client.nationality || '',
                       passportNumber: client.passportNumber || '',
                       dateOfBirth: client.dateOfBirth ? new Date(client.dateOfBirth).toISOString().split('T')[0] : '',
+                      visaCountry: client.visaCountry || '',
                     });
                     setShowEditModal(true);
                   }}
@@ -262,6 +264,11 @@ export function ClientDetailPage() {
                   ? new Date(client.dateOfBirth).toLocaleDateString() 
                   : 'Not provided'}
               </p>
+            </div>
+            <Separator />
+            <div>
+              <p className="text-sm text-muted-foreground">Visa (Destination) Country</p>
+              <p className="font-medium">{client.visaCountry || 'Not provided'}</p>
             </div>
           </CardContent>
         </Card>
@@ -582,14 +589,32 @@ export function ClientDetailPage() {
                     />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-dob">Date of Birth</Label>
-                  <Input
-                    id="edit-dob"
-                    type="date"
-                    value={editingClient.dateOfBirth}
-                    onChange={(e) => setEditingClient(prev => ({ ...prev, dateOfBirth: e.target.value }))}
-                  />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-dob">Date of Birth</Label>
+                    <Input
+                      id="edit-dob"
+                      type="date"
+                      value={editingClient.dateOfBirth}
+                      onChange={(e) => setEditingClient(prev => ({ ...prev, dateOfBirth: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-visaCountry">Visa (Destination) Country</Label>
+                    <select
+                      id="edit-visaCountry"
+                      value={editingClient.visaCountry}
+                      onChange={(e) => setEditingClient(prev => ({ ...prev, visaCountry: e.target.value }))}
+                      className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">Select country...</option>
+                      {COUNTRIES.map((country) => (
+                        <option key={country.code} value={country.name}>
+                          {country.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </CardContent>
               <div className="flex justify-end gap-3 p-6 pt-0">

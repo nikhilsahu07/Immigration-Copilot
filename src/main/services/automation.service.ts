@@ -19,10 +19,12 @@ import {
   portalRepository,
   extractionRepository,
   chatRepository,
+  credentialRepository,
 } from '../database/repositories';
 import { logger, automationLoopLogger } from '../core/logger';
 import { createError } from '../core/error-handler';
 import { ERROR_CODES } from '../../shared/constants';
+import { DEFAULT_GEMINI_MODEL } from '../../shared/types';
 
 import { getBrowserViewManager } from '../index';
 import { browserConnector } from '../automation/browser-connector';
@@ -112,10 +114,14 @@ export class AutomationService {
       throw createError(ERROR_CODES.PORTAL_NOT_FOUND, 'Portal not found');
     if (!extraction) throw createError(ERROR_CODES.EXTRACTION_NOT_FOUND);
 
-    // 2. Create Job in DB
+    // 2. Resolve model from active credential (set in Settings > Gemini API Keys)
+    const activeCredential = await credentialRepository.findActive(companyId);
+    const modelName = activeCredential?.modelName ?? DEFAULT_GEMINI_MODEL;
+
+    // 3. Create Job in DB
     const job = await automationJobRepository.create(companyId, agentId, {
       ...input,
-      modelName: input.modelName || 'gemini-3-flash-preview',
+      modelName,
     });
 
     // 2.5 Save custom prompt to chat history if present

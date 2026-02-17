@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Globe, ExternalLink, Trash2, X, Loader2, Edit } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label } from '../../components/ui';
 import { usePortalStore } from '../../stores';
+import { COUNTRIES } from '../../../shared/constants';
 
 export function PortalsPage() {
   const { 
@@ -232,13 +233,20 @@ export function PortalsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="country">Country *</Label>
-                  <Input
+                  <select
                     id="country"
-                    placeholder="e.g., United States"
                     value={formData.country}
                     onChange={(e) => setFormData(prev => ({ ...prev, country: e.target.value }))}
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
                     required
-                  />
+                  >
+                    <option value="">Select country...</option>
+                    {COUNTRIES.map((country) => (
+                      <option key={country.code} value={country.name}>
+                        {country.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="description">Description</Label>

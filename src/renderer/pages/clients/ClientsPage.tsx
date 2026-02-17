@@ -26,6 +26,8 @@ export function ClientsPage() {
     phone: '',
     nationality: '',
     passportNumber: '',
+    dateOfBirth: '',
+    visaCountry: '',
   });
   const [creating, setCreating] = useState(false);
 
@@ -46,7 +48,7 @@ export function ClientsPage() {
     setCreating(false);
     if (result) {
       setShowCreateModal(false);
-      setNewClient({ name: '', email: '', phone: '', nationality: '', passportNumber: '' });
+      setNewClient({ name: '', email: '', phone: '', nationality: '', passportNumber: '', dateOfBirth: '', visaCountry: '' });
     }
   };
 
@@ -256,6 +258,33 @@ export function ClientsPage() {
                       value={newClient.passportNumber}
                       onChange={(e) => setNewClient(prev => ({ ...prev, passportNumber: e.target.value }))}
                     />
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="dateOfBirth">Date of Birth</Label>
+                    <Input
+                      id="dateOfBirth"
+                      type="date"
+                      value={newClient.dateOfBirth}
+                      onChange={(e) => setNewClient(prev => ({ ...prev, dateOfBirth: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="visaCountry">Visa (Destination) Country</Label>
+                    <select
+                      id="visaCountry"
+                      value={newClient.visaCountry}
+                      onChange={(e) => setNewClient(prev => ({ ...prev, visaCountry: e.target.value }))}
+                      className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">Select country...</option>
+                      {COUNTRIES.map((country) => (
+                        <option key={country.code} value={country.name}>
+                          {country.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </CardContent>

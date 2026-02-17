@@ -1,6 +1,6 @@
 import { Collection, ObjectId, Filter, UpdateFilter } from 'mongodb';
 import { getDatabase, COLLECTIONS } from '../index';
-import { Credential, CreateCredentialInput, UpdateCredentialInput } from '../../../shared/types';
+import { Credential, CreateCredentialInput, UpdateCredentialInput, DEFAULT_GEMINI_MODEL } from '../../../shared/types';
 import { logger } from '../../core/logger';
 
 export class CredentialRepository {
@@ -23,6 +23,7 @@ export class CredentialRepository {
       companyId,
       title: input.title,
       apiKey: input.apiKey,
+      modelName: input.modelName ?? DEFAULT_GEMINI_MODEL,
       isActive: input.isActive ?? false,
       createdAt: now,
       updatedAt: now,

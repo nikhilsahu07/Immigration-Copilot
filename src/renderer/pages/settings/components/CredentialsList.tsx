@@ -3,13 +3,14 @@ import { Key, Plus, Edit, Trash2, Check, X, Loader2, Eye, EyeOff } from 'lucide-
 import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../../components/ui';
 import { api } from '../../../lib/api';
 import type { Credential, CreateCredentialInput, UpdateCredentialInput } from '../../../../shared/types';
+import { DEFAULT_GEMINI_MODEL } from '../../../../shared/types';
 
 export function CredentialsList() {
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCredential, setEditingCredential] = useState<Credential | null>(null);
-  const [formData, setFormData] = useState({ title: '', apiKey: '', isActive: false });
+  const [formData, setFormData] = useState({ title: '', apiKey: '', modelName: DEFAULT_GEMINI_MODEL, isActive: false });
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
 
@@ -37,11 +38,12 @@ export function CredentialsList() {
       setFormData({
         title: credential.title,
         apiKey: credential.apiKey,
+        modelName: credential.modelName ?? DEFAULT_GEMINI_MODEL,
         isActive: credential.isActive,
       });
     } else {
       setEditingCredential(null);
-      setFormData({ title: '', apiKey: '', isActive: false });
+      setFormData({ title: '', apiKey: '', modelName: DEFAULT_GEMINI_MODEL, isActive: false });
     }
     setIsDialogOpen(true);
   };
@@ -49,7 +51,7 @@ export function CredentialsList() {
   const handleCloseDialog = () => {
     setIsDialogOpen(false);
     setEditingCredential(null);
-    setFormData({ title: '', apiKey: '', isActive: false });
+    setFormData({ title: '', apiKey: '', modelName: DEFAULT_GEMINI_MODEL, isActive: false });
   };
 
   const handleSave = async () => {
@@ -64,6 +66,7 @@ export function CredentialsList() {
         const updateData: UpdateCredentialInput = {
           title: formData.title,
           apiKey: formData.apiKey,
+          modelName: formData.modelName,
           isActive: formData.isActive,
         };
         const result = await api.credential.update({
@@ -80,6 +83,7 @@ export function CredentialsList() {
         const createData: CreateCredentialInput = {
           title: formData.title,
           apiKey: formData.apiKey,
+          modelName: formData.modelName,
           isActive: formData.isActive,
         };
         const result = await api.credential.create(createData);
@@ -189,7 +193,7 @@ export function CredentialsList() {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Created {new Date(credential.createdAt).toLocaleDateString()}
+                      Model: {credential.modelName ?? DEFAULT_GEMINI_MODEL} · Created {new Date(credential.createdAt).toLocaleDateString()}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -245,6 +249,23 @@ export function CredentialsList() {
                 onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
                 placeholder="Enter your Gemini API key"
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Gemini Model</Label>
+              <select
+                value={formData.modelName}
+                onChange={(e) => setFormData({ ...formData, modelName: e.target.value })}
+                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="gemini-3-flash-preview">gemini-3-flash-preview (Default)</option>
+                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp</option>
+                <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Used for extraction and form automation when this key is active
+              </p>
             </div>
             <div className="flex items-center space-x-2">
               <input
