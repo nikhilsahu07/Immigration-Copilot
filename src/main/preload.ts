@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     upload: createInvoker(IPC_CHANNELS.DOCUMENT_UPLOAD),
     delete: createInvoker(IPC_CHANNELS.DOCUMENT_DELETE),
     getPresignedUrl: createInvoker(IPC_CHANNELS.DOCUMENT_GET_URL),
+    download: createInvoker(IPC_CHANNELS.DOCUMENT_DOWNLOAD),
   },
 
   // Extraction

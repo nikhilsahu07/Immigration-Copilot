@@ -53,14 +53,33 @@ export async function deleteFromS3(key: string): Promise<void> {
   logger.info(`File deleted from S3: ${key}`);
 }
 
-export async function getPresignedUrl(key: string): Promise<{ url: string; expiresAt: Date }> {
+export async function getPresignedUrl(key: string, fileType?: string): Promise<{ url: string; expiresAt: Date }> {
   const config = getStorageConfig();
   const client = getS3Client();
+
+  // Map fileType to Content-Type for proper PDF/image rendering in iframes
+  const getContentType = (fileType?: string): string => {
+    if (!fileType) return 'application/pdf'; // Default
+    switch (fileType.toLowerCase()) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      default:
+        return 'application/pdf';
+    }
+  };
+
+  const contentType = getContentType(fileType);
 
   const command = new GetObjectCommand({
     Bucket: config.bucketName,
     Key: key,
     ResponseContentDisposition: 'inline',
+    ResponseContentType: contentType,
   });
 
   const url = await getSignedUrl(client, command, {

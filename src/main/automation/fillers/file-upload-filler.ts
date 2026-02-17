@@ -31,8 +31,13 @@ export class FileUploadFiller extends BaseFiller {
       // If it looks like a key (e.g. companyId/clientId/timestamp_file.pdf) and not a URL
       if (!fileKeyOrUrl.startsWith('http')) {
           try {
+             // Extract fileType from filename extension for proper Content-Type header
+             const fileName = path.basename(fileKeyOrUrl.split('?')[0]);
+             const ext = path.extname(fileName).toLowerCase().slice(1); // Remove the dot
+             const fileType = ext === 'pdf' ? 'pdf' : (ext === 'png' ? 'png' : (['jpg', 'jpeg'].includes(ext) ? 'jpg' : undefined));
+             
              // We need to await the result which is { url, expiresAt }
-             const res = await getPresignedUrl(fileKeyOrUrl);
+             const res = await getPresignedUrl(fileKeyOrUrl, fileType);
              signedUrl = res.url;
           } catch {
              logger.warn(`Failed to get presigned URL for key ${fileKeyOrUrl}, trying as direct URL`);

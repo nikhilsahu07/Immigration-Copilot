@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, dialog } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/constants';
 import { documentManager } from '../../storage';
 import { auditLogRepository } from '../../database/repositories';
@@ -6,6 +6,8 @@ import { handleError, success, createError } from '../../core/error-handler';
 import { ERROR_CODES } from '../../../shared/constants';
 import { getCurrentSession } from '../../services/auth';
 import { logger } from '../../core/logger';
+import fs from 'fs';
+import path from 'path';
 
 function requireAuth() {
   const session = getCurrentSession();
@@ -95,6 +97,47 @@ export function registerDocumentHandlers(): void {
       });
     } catch (error) {
       logger.error('Get document URL error:', error);
+      return handleError(error);
+    }
+  });
+
+  // Download document to user's system
+  ipcMain.handle(IPC_CHANNELS.DOCUMENT_DOWNLOAD, async (_event, { url, filename }) => {
+    try {
+      // Show save dialog to let user choose where to save
+      const result = await dialog.showSaveDialog({
+        title: 'Save Document',
+        defaultPath: filename,
+        filters: [
+          { name: 'PDF Files', extensions: ['pdf'] },
+          { name: 'Image Files', extensions: ['jpg', 'jpeg', 'png'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return success({ cancelled: true });
+      }
+
+      // Download the file from the presigned URL
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to download file: ${response.statusText}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      // Write file to disk
+      fs.writeFileSync(result.filePath, buffer);
+
+      return success({ 
+        success: true, 
+        filePath: result.filePath,
+        size: buffer.length 
+      });
+    } catch (error) {
+      logger.error('Download error:', error);
       return handleError(error);
     }
   });

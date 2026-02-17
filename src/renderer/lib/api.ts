@@ -115,6 +115,10 @@ export interface ElectronAPI {
     getPresignedUrl: (data: {
       id: string;
     }) => Promise<Result<{ url: string; expiresAt: Date }>>;
+    download: (data: {
+      url: string;
+      filename: string;
+    }) => Promise<Result<{ success: boolean; filePath?: string; size?: number; cancelled?: boolean }>>;
   };
   extraction: {
     list: (data: { clientId: string }) => Promise<Result<Extraction[]>>;

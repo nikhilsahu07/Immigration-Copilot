@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, FileText, Download, ExternalLink, Loader2, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from './ui';
 import type { DocumentWithPresignedUrl } from '../../shared/types';
+import { api } from '../lib/api';
 
 interface DocumentPreviewProps {
   document: DocumentWithPresignedUrl | null;
@@ -12,14 +13,17 @@ interface DocumentPreviewProps {
 export function DocumentPreview({ document, isOpen, onClose }: DocumentPreviewProps) {
   const [zoom, setZoom] = useState(100);
   const [isLoading, setIsLoading] = useState(true);
-  const [pdfError, setPdfError] = useState(false);
 
   // Reset state when document changes
   useEffect(() => {
     if (document) {
       setIsLoading(true);
-      setPdfError(false);
       setZoom(100);
+      
+      // For images, wait for load
+      if (document.fileType === 'pdf') {
+        setIsLoading(false);
+      }
     }
   }, [document?.presignedUrl]);
 
@@ -35,9 +39,20 @@ export function DocumentPreview({ document, isOpen, onClose }: DocumentPreviewPr
     window.open(document.presignedUrl, '_blank');
   };
 
-  const handlePdfError = () => {
-    setIsLoading(false);
-    setPdfError(true);
+  const handleDownloadToSystem = async () => {
+    try {
+      const result = await api.document.download({
+        url: document.presignedUrl,
+        filename: document.originalName,
+      });
+      if (result.success && result.data && !result.data.cancelled) {
+        onClose();
+      } else if (!result.success) {
+        window.open(document.presignedUrl, '_blank');
+      }
+    } catch (error) {
+      window.open(document.presignedUrl, '_blank');
+    }
   };
 
   return (
@@ -71,11 +86,11 @@ export function DocumentPreview({ document, isOpen, onClose }: DocumentPreviewPr
                 </Button>
               </>
             )}
-            <Button variant="ghost" size="icon" onClick={handleDownload} title="Open in new tab">
-              <ExternalLink className="w-4 h-4" />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={handleDownload} title="Download">
+            <Button variant="ghost" size="icon" onClick={handleDownloadToSystem} title="Download to system">
               <Download className="w-4 h-4" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={handleDownload} title="Open in browser">
+              <ExternalLink className="w-4 h-4" />
             </Button>
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X className="w-5 h-5" />
@@ -85,39 +100,26 @@ export function DocumentPreview({ document, isOpen, onClose }: DocumentPreviewPr
 
         {/* Preview Content */}
         <div className="flex-1 overflow-auto bg-muted/30 flex items-center justify-center p-4 relative">
-          {isLoading && !pdfError && (
+          {isLoading && isImage && (
             <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
           )}
           
-          {isPdf && !pdfError && (
-            <object
-              data={document.presignedUrl}
-              type="application/pdf"
-              className="w-full h-full rounded"
-              onLoad={() => setIsLoading(false)}
-              onError={handlePdfError}
-            >
-              {/* Fallback for when object doesn't render */}
-              <iframe
-                src={document.presignedUrl}
-                className="w-full h-full rounded border"
-                onLoad={() => setIsLoading(false)}
-                onError={handlePdfError}
-                title={document.originalName}
-              />
-            </object>
-          )}
-
-          {isPdf && pdfError && (
-            <div className="text-center text-muted-foreground">
-              <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <p className="mb-2">PDF preview not available in-app</p>
-              <p className="text-xs mb-4">Click the button below to open in your browser</p>
-              <Button onClick={handleDownload}>
-                <ExternalLink className="w-4 h-4" />
-                Open PDF in Browser
+          {isPdf && (
+            <div className="flex flex-col items-center justify-center h-full text-center p-8">
+              <FileText className="w-24 h-24 mx-auto mb-4 text-muted-foreground opacity-50" />
+              <p className="text-lg font-medium mb-2">PDF Document</p>
+              <p className="text-sm text-muted-foreground mb-6">
+                Download this PDF to your system to view it.
+              </p>
+              <Button onClick={handleDownloadToSystem} className="mb-4">
+                <Download className="w-4 h-4 mr-2" />
+                Download PDF
+              </Button>
+              <Button variant="outline" onClick={handleDownload}>
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Open in Browser
               </Button>
             </div>
           )}

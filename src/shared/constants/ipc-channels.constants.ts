@@ -34,6 +34,7 @@ export const IPC_CHANNELS = {
   DOCUMENT_UPLOAD: 'document:upload',
   DOCUMENT_DELETE: 'document:delete',
   DOCUMENT_GET_URL: 'document:get-url',
+  DOCUMENT_DOWNLOAD: 'document:download',
 
   // Extraction
   EXTRACTION_LIST: 'extraction:list',

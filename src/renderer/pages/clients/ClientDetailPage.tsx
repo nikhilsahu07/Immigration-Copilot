@@ -176,6 +176,17 @@ export function ClientDetailPage() {
     }
   };
 
+  const handleDownloadDocument = async (doc: DocumentWithPresignedUrl) => {
+    try {
+      await api.document.download({
+        url: doc.presignedUrl,
+        filename: doc.originalName,
+      });
+    } catch (err) {
+      console.error('Failed to download document:', err);
+    }
+  };
+
   if (clientLoading && !selectedClient) {
     return (
       <div className="page-container flex items-center justify-center">
@@ -368,10 +379,15 @@ export function ClientDetailPage() {
                   {documents.map((doc) => (
                     <div
                       key={doc._id}
-                      className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
+                      className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
                       onClick={() => {
-                        setPreviewDocument(doc);
-                        setShowPreview(true);
+                        // For PDFs, download directly; for images, show preview
+                        if (doc.fileType === 'pdf') {
+                          handleDownloadDocument(doc);
+                        } else {
+                          setPreviewDocument(doc);
+                          setShowPreview(true);
+                        }
                       }}
                     >
                       <div className="flex items-center gap-3">
@@ -394,8 +410,13 @@ export function ClientDetailPage() {
                           className="text-muted-foreground hover:text-primary"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setPreviewDocument(doc);
-                            setShowPreview(true);
+                            // For PDFs, download directly; for images, show preview
+                            if (doc.fileType === 'pdf') {
+                              handleDownloadDocument(doc);
+                            } else {
+                              setPreviewDocument(doc);
+                              setShowPreview(true);
+                            }
                           }}
                         >
                           <Eye className="w-4 h-4" />

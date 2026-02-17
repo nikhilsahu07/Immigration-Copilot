@@ -66,8 +66,8 @@ export class DocumentManager {
         description,
       });
 
-      // Get presigned URL
-      const { url, expiresAt } = await getPresignedUrl(s3Key);
+      // Get presigned URL with proper Content-Type for PDF/image rendering
+      const { url, expiresAt } = await getPresignedUrl(s3Key, fileType);
 
       logger.info(`Document uploaded: ${document._id}`);
 
@@ -88,7 +88,7 @@ export class DocumentManager {
       return null;
     }
 
-    const { url, expiresAt } = await getPresignedUrl(document.s3Key);
+    const { url, expiresAt } = await getPresignedUrl(document.s3Key, document.fileType);
 
     return {
       ...document,
@@ -102,7 +102,7 @@ export class DocumentManager {
     
     const docsWithUrls = await Promise.all(
       documents.map(async (doc) => {
-        const { url, expiresAt } = await getPresignedUrl(doc.s3Key);
+        const { url, expiresAt } = await getPresignedUrl(doc.s3Key, doc.fileType);
         return {
           ...doc,
           presignedUrl: url,
