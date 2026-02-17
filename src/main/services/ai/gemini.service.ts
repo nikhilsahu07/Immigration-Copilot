@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI, GenerativeModel, Part } from '@google/generative-ai';
-import { getAIConfig, EXTRACTION_PROMPT_TEMPLATE, MAPPING_PROMPT_TEMPLATE } from '../../config';
-import { GeminiExtractionRequest, GeminiMappingRequest, GeminiExtractionResponse, GeminiMappingResponse, GeminiResponse } from '../../../shared/types';
-import { logger, geminiPromptLogger } from '../../core/logger';
+import { getAIConfig, EXTRACTION_PROMPT_TEMPLATE } from '../../config';
+import { GeminiExtractionRequest, GeminiExtractionResponse, GeminiResponse } from '../../../shared/types';
+import { logger } from '../../core/logger';
 
 function getModel(apiKey: string, modelName: string): GenerativeModel {
   const config = getAIConfig(apiKey, modelName);
@@ -28,22 +28,17 @@ export class GeminiService {
       const prompt = this.buildExtractionPrompt(request);
       const parts: Part[] = [{ text: prompt }];
 
-      // Add images if present
+      // Add all document blobs (images and PDFs) as inline parts
       for (const doc of request.documents) {
-        if (doc.type === 'image' && doc.content) {
-          // Normalize MIME type - Gemini requires image/jpeg not image/jpg
-          let mimeType = doc.mimeType || 'image/jpeg';
-          if (mimeType === 'image/jpg') {
-            mimeType = 'image/jpeg';
-          }
-          
-          parts.push({
-            inlineData: {
-              mimeType,
-              data: doc.content,
-            },
-          });
-        }
+        if (!doc.content || (doc.type !== 'image' && doc.type !== 'pdf')) continue;
+        let mimeType = doc.mimeType || (doc.type === 'pdf' ? 'application/pdf' : 'image/jpeg');
+        if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
+        parts.push({
+          inlineData: {
+            mimeType,
+            data: doc.content,
+          },
+        });
       }
 
       logger.info('Sending extraction request to Gemini...');
@@ -77,96 +72,16 @@ export class GeminiService {
     }
   }
 
-  async mapFormFields(
-    request: GeminiMappingRequest,
-    apiKey: string,
-    modelName: string
-  ): Promise<GeminiResponse<GeminiMappingResponse>> {
-    const startTime = Date.now();
-    
-    try {
-      const prompt = this.buildMappingPrompt(request);
-
-      // Log the prompt details as requested
-      geminiPromptLogger.info(
-        '--- NEW GEMINI REQUEST ---\n' + 
-        `TIMESTAMP: ${new Date().toISOString()}\n\n` +
-        '--- CLEANED HTML STRUCTURE ---\n' + 
-        JSON.stringify(request.htmlFields, null, 2) + '\n\n' + 
-        '--- CUSTOM PROMPT ---\n' + 
-        (request.customPrompt || 'None') + '\n\n' + 
-        '--- FINAL FIXED PROMPT ---\n' + 
-        prompt + '\n\n' +
-        '--------------------------------------------------\n'
-      );
-
-      logger.info('Sending mapping request to Gemini...');
-      const model = getModel(apiKey, modelName);
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
-
-      logger.debug('Gemini mapping response received');
-
-      const mapping = this.parseJsonResponse<GeminiMappingResponse>(text);
-      const processingTime = Date.now() - startTime;
-
-      // Validate and add defaults
-      if (!mapping.fields || !Array.isArray(mapping.fields)) {
-        throw new Error('Invalid response: missing fields array');
-      }
-
-      if (!mapping.submitButton) {
-        mapping.submitButton = {
-          selector: "button[type='submit'], input[type='submit']",
-          text: 'Submit',
-        };
-      }
-
-      if (!mapping.captcha) {
-        mapping.captcha = { detected: false };
-      }
-
-      if (!mapping.otp) {
-        mapping.otp = { detected: false };
-      }
-
-      return {
-        success: true,
-        data: mapping,
-        processingTime,
-      };
-    } catch (error) {
-      logger.error('Gemini mapping error:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Mapping failed',
-        processingTime: Date.now() - startTime,
-      };
-    }
-  }
-
   private buildExtractionPrompt(request: GeminiExtractionRequest): string {
     let prompt = EXTRACTION_PROMPT_TEMPLATE;
 
     prompt = prompt.replace('{clientInfo}', JSON.stringify(request.clientInfo, null, 2));
-    
-    const documentTexts = request.documents
-      .filter(d => d.type === 'text')
-      .map((d, i) => `--- Document ${i + 1} (${d.filename || 'Unknown'}) ---\n${d.content}`)
-      .join('\n\n');
-    
-    prompt = prompt.replace('{documents}', documentTexts || '(No text documents provided)');
-    prompt = prompt.replace('{customPrompt}', request.customPrompt || '(No custom instructions)');
-
-    return prompt;
-  }
-
-  private buildMappingPrompt(request: GeminiMappingRequest): string {
-    let prompt = MAPPING_PROMPT_TEMPLATE;
-
-    prompt = prompt.replace('{extractedData}', JSON.stringify(request.extractedData, null, 2));
-    prompt = prompt.replace('{htmlFields}', JSON.stringify(request.htmlFields, null, 2));
+    // Documents are sent as attached files (inlineData); no pasted text
+    const docCount = request.documents.filter(d => d.type === 'image' || d.type === 'pdf').length;
+    const documentsPlaceholder = docCount > 0
+      ? `The user has attached ${docCount} document(s) (images and/or PDFs) above. Extract structured information from all of them.`
+      : '(No documents attached)';
+    prompt = prompt.replace('{documents}', documentsPlaceholder);
     prompt = prompt.replace('{customPrompt}', request.customPrompt || '(No custom instructions)');
 
     return prompt;

@@ -8,7 +8,19 @@ import { handleError, success, createError } from '../../core/error-handler';
 import { ERROR_CODES } from '../../../shared/constants';
 import { getCurrentSession } from '../../services/auth';
 import { logger } from '../../core/logger';
-import pdfParse from 'pdf-parse';
+
+/** Map file extension/type to MIME for Gemini inlineData */
+function getMimeType(fileType: string): string {
+  const normalized = (fileType || '').toLowerCase();
+  if (normalized === 'pdf') return 'application/pdf';
+  if (['jpg', 'jpeg'].includes(normalized)) return 'image/jpeg';
+  if (normalized === 'png') return 'image/png';
+  if (normalized === 'gif') return 'image/gif';
+  if (normalized === 'webp') return 'image/webp';
+  if (normalized.startsWith('image/')) return normalized;
+  // Unknown types: Gemini may still accept as generic binary
+  return 'application/octet-stream';
+}
 
 function requireAuth() {
   const session = getCurrentSession();
@@ -58,28 +70,18 @@ export function registerExtractionHandlers(): void {
         throw createError(ERROR_CODES.EXTRACTION_NO_DOCUMENTS);
       }
 
-      // Process documents for Gemini
+      // Process documents for Gemini: send all as inline blobs (PDF, images, etc.)
       const geminiDocs = await Promise.all(
         documents.map(async (doc) => {
-          if (doc.fileType === 'pdf') {
-            // Download and parse PDF
-            const buffer = await downloadFromS3(doc.s3Key);
-            const pdfData = await pdfParse(buffer);
-            return {
-              type: 'text' as const,
-              content: pdfData.text,
-              filename: doc.originalName,
-            };
-          } else {
-            // Download image and convert to base64
-            const buffer = await downloadFromS3(doc.s3Key);
-            return {
-              type: 'image' as const,
-              content: buffer.toString('base64'),
-              mimeType: `image/${doc.fileType}`,
-              filename: doc.originalName,
-            };
-          }
+          const buffer = await downloadFromS3(doc.s3Key);
+          const mimeType = getMimeType(doc.fileType);
+          const isPdf = (doc.fileType || '').toLowerCase() === 'pdf';
+          return {
+            type: (isPdf ? 'pdf' : 'image') as 'pdf' | 'image',
+            content: buffer.toString('base64'),
+            mimeType,
+            filename: doc.originalName,
+          };
         })
       );
 

@@ -20,30 +20,10 @@ export interface GeminiExtractionRequest {
 }
 
 export interface GeminiDocument {
-  type: 'text' | 'image';
-  content: string; // For text: actual text, for image: base64
+  type: 'text' | 'image' | 'pdf';
+  content: string; // For text: actual text; for image/pdf: base64
   mimeType?: string;
   filename?: string;
-}
-
-export interface GeminiMappingRequest {
-  extractedData: Record<string, unknown>;
-  htmlFields: HtmlFieldForGemini[];
-  customPrompt?: string;
-}
-
-export interface HtmlFieldForGemini {
-  index: number;
-  tagName: string;
-  type: string;
-  name?: string;
-  id?: string;
-  placeholder?: string;
-  labelText?: string;
-  options?: { value: string; text: string }[];
-  radioOptions?: { value: string; label: string }[];
-  uniqueSelector: string;
-  required?: boolean;
 }
 
 export interface GeminiResponse<T> {
@@ -68,30 +48,4 @@ export interface GeminiExtractionResponse {
   family?: Record<string, unknown>[];
   contact?: Record<string, unknown>;
   additionalInfo?: Record<string, unknown>;
-}
-
-export interface GeminiMappingResponse {
-  fields: {
-    fieldIndex: number;
-    fieldName: string;
-    fieldLabel: string;
-    fieldType: string;
-    selector: string;
-    value: string;
-    confidence: 'high' | 'medium' | 'low';
-    reasoning: string;
-  }[];
-  captcha: {
-    detected: boolean;
-    type?: string;
-    isInsideForm?: boolean;
-  };
-  otp: {
-    detected: boolean;
-    fieldSelector?: string;
-  };
-  submitButton: {
-    selector: string;
-    text: string;
-  };
 }

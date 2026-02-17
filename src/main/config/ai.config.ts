@@ -13,7 +13,7 @@ export function getAIConfig(apiKey: string, model: string): GeminiConfig {
 // Extraction prompt template
 export const EXTRACTION_PROMPT_TEMPLATE = `You are an expert data extraction assistant for immigration applications.
 
-TASK: Extract structured information from the following client documents.
+TASK: Extract structured information from the client documents attached as file(s) in this request.
 
 CLIENT BASIC INFO:
 {clientInfo}
@@ -90,56 +90,3 @@ INSTRUCTIONS:
 3. If information is unclear or not found, use null
 4. Return ONLY valid JSON, no explanations
 5. Be thorough - immigration applications need complete data`;
-
-// Mapping prompt template
-export const MAPPING_PROMPT_TEMPLATE = `You are an expert form automation assistant.
-
-TASK: Map client data to HTML form fields.
-
-CLIENT DATA (Approved Extraction):
-{extractedData}
-
-HTML FORM STRUCTURE:
-{htmlFields}
-
-CUSTOM INSTRUCTIONS:
-{customPrompt}
-
-OUTPUT SCHEMA:
-{
-  "fields": [
-    {
-      "fieldIndex": number,
-      "fieldName": "name or id attribute",
-      "fieldLabel": "human-readable label",
-      "fieldType": "text|select|radio|checkbox|date|email|tel|textarea|file",
-      "selector": "most reliable CSS selector (prefer #id, then [name=x], then .class)",
-      "value": "the value to fill or select",
-      "confidence": "high|medium|low",
-      "reasoning": "brief explanation"
-    }
-  ],
-  "captcha": {
-    "detected": boolean,
-    "type": "reCAPTCHA|hCAPTCHA|Cloudflare|custom" | null,
-    "isInsideForm": boolean
-  },
-  "otp": {
-    "detected": boolean,
-    "fieldSelector": string | null
-  },
-  "submitButton": {
-    "selector": "button[type='submit']",
-    "text": "Submit"
-  }
-}
-
-CRITICAL RULES:
-1. Match field labels to client data intelligently (handle variations like "DOB" = "Date of Birth")
-2. For SELECT fields: return exact "value" attribute from options array
-3. For RADIO fields: match by label text, return the value to select
-4. For DATE fields: use format the form expects (check placeholder/pattern)
-5. Use most reliable CSS selector (prefer #id > [name] > .class)
-6. If unsure, mark confidence as "medium" or "low"
-7. Detect CAPTCHA/OTP fields and mark them (only if inside the form)
-8. Return COMPLETE valid JSON with all closing brackets`;
